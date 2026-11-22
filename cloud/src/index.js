@@ -131,7 +131,7 @@ async function weather(loc, ctx) {
 }
 
 // ------------------------------------------------------------------ Kindle UI state
-// home: {m:"h", v:"day"|"week"|"month"|"day:YYYY-MM-DD"}   compose: see composeDefaults
+// home: {m:"h", v:"day"|"week"|"month"|"day:YYYY-MM-DD", optionally + "@<open>.<period when chosen>"}   compose: see composeDefaults
 function decodeState(s, now) {
   if (!s) return { m: "h", v: "day" };
   try {
@@ -139,7 +139,7 @@ function decodeState(s, now) {
     const st = JSON.parse(new TextDecoder().decode(Uint8Array.from(raw, (c) => c.charCodeAt(0))));
     if (st.m !== "c") {
       const v = String(st.v || "day");
-      return { m: "h", v: /^(day|week|month)(:\d{4}-\d{2}-\d{2})?$/.test(v) ? v : "day" };
+      return { m: "h", v: /^(day|week|month)(:\d{4}-\d{2}-\d{2})?(@[0-2]\.[0-2])?$/.test(v) ? v : "day" };
     }
     const d = composeDefaults(now);
     const t = st.t === "h" ? "h" : "e";
@@ -209,6 +209,7 @@ function applyAction(action, st, data, now) {
       return { st, write: true };
     }
     if (kind === "view") return { st: { m: "h", v: rest }, write: false };
+    if (kind === "open") return { st: { m: "h", v: rest }, write: false }; // open one period on the day view
     if (kind === "goto") return { st: { m: "h", v: `day:${rest}` }, write: false };
     if (kind === "compose") return { st: composeDefaults(now), write: false };
     return { st, write: false };

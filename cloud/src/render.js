@@ -171,7 +171,7 @@ function drawTabs(c, active) {
   c.zone([pb[0] - 8, pb[1] - 10, pb[2], pb[3] + 10], "compose");
 }
 
-function renderDay(c, data, day, now) {
+function renderDay(c, data, day, now, base = "day", openPick = null) {
   const g = c.g;
   const today = day.getTime() === now.date.getTime();
   let y = CONTENT_Y;
@@ -193,29 +193,44 @@ function renderDay(c, data, day, now) {
 
   const r = habitsOn(data, day);
   const done = new Set(data.done[iso(day)] || []);
-  const nItems = PERIODS.reduce((s, [p]) => s + r[p].length, 0);
+  // only one period is open; the others collapse to their header (tap a header to open it)
+  const open = openPick != null ? openPick
+    : today ? periodIndex(now) : Math.max(0, PERIODS.findIndex(([p]) => r[p].length));
   const bottom = H - 70, headH = 74;
-  const avail = bottom - y - 3 * (headH + 14);
-  const rowH = Math.max(52, Math.min(92, Math.floor(avail / Math.max(nItems, 1))));
-  const cur = today ? periodIndex(now) : -1;
+  const nOpen = r[PERIODS[open][0]].length;
+  const avail = bottom - y - 3 * (headH + 8) - 18;
+  const rowH = Math.max(48, Math.min(92, Math.floor(avail / Math.max(nOpen, 1))));
+  const fitRows = Math.max(1, Math.floor(avail / rowH));
 
   PERIODS.forEach(([p, label], pi) => {
     const items = r[p];
-    const on = pi === cur;
+    const on = pi === open;
     g.box([30, y, W - 30, y + headH], 20, on ? { fill: 0 } : { fill: 255, outline: 0, width: 4 });
     const fg = on ? 255 : 0, bg = on ? 0 : 255, icx = 82, icy = y + headH / 2;
     if (pi === 0) iconSun(g, icx, icy, 26, fg, bg);
     else if (pi === 1) iconAfternoon(g, icx, icy, 28, fg, bg);
     else iconMoon(g, icx, icy, 26, fg, bg);
     g.text(130, icy, label, 44, true, fg, "lm");
+    // chevron: down = open, right = collapsed
+    const cx = W - 70;
+    if (on) g.polyline([[cx - 12, icy - 6], [cx, icy + 6], [cx + 12, icy - 6]], 5, fg);
+    else g.polyline([[cx - 6, icy - 12], [cx + 6, icy], [cx - 6, icy + 12]], 5, fg);
     const nd = items.filter((h) => isDone(done, h)).length;
     if (items.length) {
-      if (nd === items.length) star(g, W - 75, icy, 26, fg);
-      g.text(W - 115, icy, `${nd}/${items.length}`, 34, false, fg, "rm");
+      if (nd === items.length) star(g, W - 135, icy, 24, fg);
+      g.text(W - 170, icy, `${nd}/${items.length}`, 34, false, fg, "rm");
     }
+    if (!on) c.zone([30, y, W - 30, y + headH], `open:${base}@${pi}.${periodIndex(now)}`);
     y += headH + 8;
+    if (!on) return;
+    if (!items.length) {
+      g.text(60, y + 30, "Nichts geplant", 32, false, 110, "lm");
+      y += 66;
+      return;
+    }
     const box = Math.floor(rowH * 0.62);
-    for (const h of items) {
+    const shown = items.length > fitRows ? items.slice(0, fitRows - 1) : items;
+    for (const h of shown) {
       const mid = y + rowH / 2, d = isDone(done, h);
       checkbox(g, 60, Math.round(mid - box / 2), box, d);
       const tx = 60 + box + 28;
@@ -223,6 +238,10 @@ function renderDay(c, data, day, now) {
       const tw = g.text(tx, mid, h.title, fs, true, d ? 130 : 0, "lm");
       if (d) g.rect(tx, mid - 2, tx + tw, mid + 2, 130);
       c.zone([30, y, W - 30, y + rowH], `toggle:${iso(day)}:${h.id}`);
+      y += rowH;
+    }
+    if (shown.length < items.length) {
+      g.text(60, y + rowH / 2, `+ ${items.length - shown.length} weitere (im Web-Dashboard)`, 30, false, 110, "lm");
       y += rowH;
     }
     y += 6;
@@ -317,11 +336,16 @@ function renderMonth(c, data, day, now) {
 /** Everything below the header. view: "day" | "day:YYYY-MM-DD" | "week" | "month". */
 export function renderBody(data, view, now) {
   const c = new Canvas();
-  let [kind, arg] = String(view || "day").split(/:(.*)/s);
+  // view = "day" | "day:YYYY-MM-DD" | ..., optionally + "@<open period>.<period when chosen>"
+  const [base, pick] = String(view || "day").split("@");
+  let [kind, arg] = base.split(/:(.*)/s);
   const day = parseDate(arg) || now.date;
   if (!["day", "week", "month"].includes(kind)) kind = "day";
+  // a manual choice expires when the time of day moves on, so the current period opens again
+  const m = /^([0-2])\.([0-2])$/.exec(pick || "");
+  const open = m && +m[2] === periodIndex(now) ? +m[1] : null;
   drawTabs(c, kind);
-  ({ day: renderDay, week: renderWeek, month: renderMonth })[kind](c, data, day, now);
+  ({ day: renderDay, week: renderWeek, month: renderMonth })[kind](c, data, day, now, base, open);
   return c;
 }
 
