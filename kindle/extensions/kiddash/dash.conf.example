@@ -1,7 +1,8 @@
 # Dashboard server on Cloudflare.
 SERVER="https://<your-worker>.<your-subdomain>.workers.dev"
-# Private key for the server (keep secret).
-KEY="paste the value of cloud/.secret here"
+# Cloudflare Access service token for the Kindle (Zero Trust > Access > Service credentials).
+CF_CLIENT_ID=""
+CF_CLIENT_SECRET=""
 # Seconds between refreshes.
 INTERVAL=60
 # Do a full black-white flash every N refreshes to clear ghosting.

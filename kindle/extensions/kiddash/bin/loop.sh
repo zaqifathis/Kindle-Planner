@@ -13,7 +13,11 @@ LOCKED=/tmp/kiddash.locked    # exists while the screen is locked
 LASTTAP=/tmp/kiddash.lasttap
 echo "start $(date)"
 # HTTPS with a current certificate bundle (the Kindle's own one is old).
-CURL="curl -s --cacert $DIR/cacert.pem -H X-Key:$KEY"
+CURL="curl -s --cacert $DIR/cacert.pem "
+# Cloudflare Access service token (the Kindle cannot do a Google login)
+if [ -n "$CF_CLIENT_ID" ] && [ -n "$CF_CLIENT_SECRET" ]; then
+  CURL="$CURL -H CF-Access-Client-Id:$CF_CLIENT_ID -H CF-Access-Client-Secret:$CF_CLIENT_SECRET"
+fi
 
 # Stopping the GUI also signals processes started from KUAL. Ignore that.
 trap '' HUP TERM INT

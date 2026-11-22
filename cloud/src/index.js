@@ -299,26 +299,88 @@ function stats(data, now, nDays = 28) {
 }
 
 // ------------------------------------------------------------------ auth
+// Two modes:
+//  1. Cloudflare Access (when ACCESS_TEAM_DOMAIN and ACCESS_AUD are set):
+//     Access signs every request it lets through with a JWT in Cf-Access-Jwt-Assertion.
+//     We verify that JWT ourselves (signature, issuer, audience, expiry) and then check:
+//       - browser users: email must be in ALLOWED_EMAILS
+//       - Kindle: service token whose client id equals KINDLE_CLIENT_ID
+//  2. Legacy shared key (only while Access is not configured yet).
+const KINDLE_ROUTES = new Set(["/dashboard.png", "/tap", "/kindle/command"]);
+
+const b64urlBytes = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(s.length / 4) * 4, "=")), (c) => c.charCodeAt(0));
+const b64urlJson = (s) => JSON.parse(new TextDecoder().decode(b64urlBytes(s)));
+
+let CERTS = { at: 0, keys: new Map() };
+async function accessKey(team, kid) {
+  if (Date.now() - CERTS.at > 3600_000 || !CERTS.keys.has(kid)) {
+    const r = await fetch(`https://${team}/cdn-cgi/access/certs`);
+    if (!r.ok) return null;
+    const { keys } = await r.json();
+    const map = new Map();
+    for (const jwk of keys || []) {
+      map.set(jwk.kid, await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]));
+    }
+    CERTS = { at: Date.now(), keys: map };
+  }
+  return CERTS.keys.get(kid) || null;
+}
+
+/** Returns the verified Access JWT payload, or null. */
+async function verifyAccess(request, env) {
+  const jwt = request.headers.get("Cf-Access-Jwt-Assertion");
+  if (!jwt) return null;
+  const parts = jwt.split(".");
+  if (parts.length !== 3) return null;
+  try {
+    const header = b64urlJson(parts[0]);
+    if (header.alg !== "RS256") return null;
+    const key = await accessKey(env.ACCESS_TEAM_DOMAIN, header.kid);
+    if (!key) return null;
+    const ok = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, b64urlBytes(parts[2]),
+      new TextEncoder().encode(parts[0] + "." + parts[1]));
+    if (!ok) return null;
+    const p = b64urlJson(parts[1]);
+    const now = Math.floor(Date.now() / 1000);
+    const aud = Array.isArray(p.aud) ? p.aud : [p.aud];
+    if (p.iss !== `https://${env.ACCESS_TEAM_DOMAIN}`) return null;
+    if (!aud.includes(env.ACCESS_AUD)) return null;
+    if (!p.exp || p.exp < now - 30 || (p.nbf && p.nbf > now + 30)) return null;
+    return p;
+  } catch {
+    return null;
+  }
+}
+
 function getCookie(request, name) {
   const m = (request.headers.get("Cookie") || "").match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
   return m ? decodeURIComponent(m[1]) : null;
 }
-// Where the key may come from:
-//   /login          -> ?k= (once, then a cookie is set)
-//   Kindle routes   -> X-Key header only (no cookie, so other sites cannot make a
-//                      logged-in browser tap the Kindle display)
-//   everything else -> X-Key header or the HttpOnly cookie
-const KINDLE_ROUTES = new Set(["/dashboard.png", "/tap", "/kindle/command"]);
-function authorized(request, url, env) {
-  if (!env.SECRET) return false; // fail closed if the secret is missing
+function keyMatches(k, secret) {
+  if (!k || !secret || k.length !== secret.length) return false;
+  let diff = 0;
+  for (let i = 0; i < k.length; i++) diff |= k.charCodeAt(i) ^ secret.charCodeAt(i);
+  return diff === 0;
+}
+
+/** Returns {who: "user", email} | {who: "kindle"} | null */
+async function authorize(request, url, env) {
+  if (env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD) {
+    const p = await verifyAccess(request, env);
+    if (!p) return null;
+    const allowed = String(env.ALLOWED_EMAILS || "").toLowerCase().split(",").map((s) => s.trim()).filter(Boolean);
+    if (p.email && allowed.includes(String(p.email).toLowerCase())) return { who: "user", email: p.email };
+    if (!p.email && p.common_name && env.KINDLE_CLIENT_ID && p.common_name === env.KINDLE_CLIENT_ID) {
+      return KINDLE_ROUTES.has(url.pathname) ? { who: "kindle" } : null; // the Kindle only needs its own routes
+    }
+    return null;
+  }
+  // legacy shared key (before Access is configured)
   let k;
   if (url.pathname === "/login") k = url.searchParams.get("k");
   else if (KINDLE_ROUTES.has(url.pathname)) k = request.headers.get("X-Key");
   else k = request.headers.get("X-Key") || getCookie(request, "kp");
-  if (!k || k.length !== env.SECRET.length) return false;
-  let diff = 0;
-  for (let i = 0; i < k.length; i++) diff |= k.charCodeAt(i) ^ env.SECRET.charCodeAt(i);
-  return diff === 0;
+  return keyMatches(k, env.SECRET) ? { who: KINDLE_ROUTES.has(url.pathname) ? "kindle" : "user" } : null;
 }
 
 const SEC = {
@@ -337,8 +399,10 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
+    const accessMode = !!(env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD);
     if (path === "/login") {
-      if (!authorized(request, url, env)) return new Response("Wrong key", { status: 403, headers: SEC });
+      if (accessMode) return new Response(null, { status: 302, headers: { ...SEC, Location: "/" } });
+      if (!(await authorize(request, url, env))) return new Response("Wrong key", { status: 403, headers: SEC });
       return new Response(null, {
         status: 302,
         headers: {
@@ -348,7 +412,8 @@ export default {
         },
       });
     }
-    if (!authorized(request, url, env)) return json({ error: "unauthorized" }, 401);
+    const auth = await authorize(request, url, env);
+    if (!auth) return json({ error: "unauthorized", access: accessMode }, accessMode ? 403 : 401);
 
     const data = await load(env, ctx);
     const loc = requestLoc(request, data);
@@ -394,6 +459,7 @@ export default {
     if (path === "/api/state" && request.method === "GET") {
       const wx = await weather(loc, ctx);
       return json({
+        signed_in_as: auth.email || null,
         today, weekday: weekday(now.date), hour: now.hour, minute: now.minute, period: periodIndex(now),
         today_habits: habitsOn(data, now.date), done: data.done[today] || [], habits: data.habits,
         events: data.events, upcoming: [0, 1, 2, 3, 4, 5, 6].flatMap((i) => eventsOn(data, addDays(now.date, i)).map((e) => ({ ...e, on: iso(addDays(now.date, i)) }))),

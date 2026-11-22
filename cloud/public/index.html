@@ -264,7 +264,7 @@ footer{padding:30px 0 50px;color:var(--muted);font-size:14px}
   </div>
 </section>
 
-<footer><div class="wrap">Kid Planner · Kindle display + web dashboard</div></footer>
+<footer><div class="wrap">Kid Planner · Kindle display + web dashboard <span id="who"></span></div></footer>
 <div class="tip" id="tip" role="tooltip"></div>
 
 <script>
@@ -277,8 +277,9 @@ let S = null, ST = null, editing = null, pv = "day", evRepeat = "none", evDays =
 
 async function api(path, body) {
   const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
-  if (r.status === 401) {
-    document.body.innerHTML = '<div class="hero" style="min-height:100vh"><div class="wrap"><h1 class="name">private</h1><p class="meta">Open your personal link (the one ending in <code>/login?k=…</code>) once on this device.</p></div></div>';
+  if (r.status === 401 || r.status === 403) {
+    document.body.innerHTML = '<div class="hero" style="min-height:100vh"><div class="wrap"><h1 class="name">private</h1>' +
+      '<p class="meta">This account has no access to the planner. <a href="/cdn-cgi/access/logout">Sign out</a> and sign in with an allowed Google account.</p></div></div>';
     throw new Error("unauthorized");
   }
   const j = await r.json();
@@ -314,7 +315,12 @@ async function load() {
   renderHero(); renderStats(); renderToday(); renderHabits(); renderEvents(); renderKindle();
 }
 
+function renderWho() {
+  const w = $("who"); w.replaceChildren();
+  if (S.signed_in_as) w.append(" · signed in as " + S.signed_in_as + " · ", el("a", { href: "/cdn-cgi/access/logout" }, "Sign out"));
+}
 function renderHero() {
+  renderWho();
   const name = S.child_name || "Planner";
   $("hero-name").textContent = name.toLowerCase();
   $("logo").textContent = (S.child_name ? S.child_name.toLowerCase() + "'s" : "kid") + " planner";

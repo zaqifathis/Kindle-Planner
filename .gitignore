@@ -21,3 +21,6 @@ node_modules/
 cloud/tools/*.png
 server/server.log
 .DS_Store
+
+# Cloudflare Access service token for the Kindle
+cloud/.kindle-token
