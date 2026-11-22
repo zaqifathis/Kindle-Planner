@@ -1,0 +1,23 @@
+# secrets
+cloud/.secret
+kindle/extensions/kiddash/dash.conf
+.dev.vars
+
+# personal data and backups
+cloud/backups/
+server/data*.json
+diag/
+
+# Kindle runtime files
+kindle/extensions/kiddash/*.log
+kindle/extensions/kiddash/last.png
+
+# third-party downloads (jailbreak tools, KOReader)
+jailbreak/
+
+# build / tooling
+node_modules/
+.wrangler/
+cloud/tools/*.png
+server/server.log
+.DS_Store

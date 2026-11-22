@@ -1,0 +1,555 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Kid Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --pink:#F37E9B; --pink-soft:#F9C3D1; --green:#008C45; --green-deep:#006B35; --yellow:#F8E44B;
+  --cream:#FFF9EC; --ink:#141414; --ink-2:#3b3b3b; --muted:#6d6a63; --line:rgba(20,20,20,.14);
+  --white:#fff; --radius:28px;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--cream);color:var(--ink);font:500 17px/1.45 "Fredoka",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+a{color:inherit}
+.wrap{max-width:1200px;margin:0 auto;padding:0 28px}
+section.band{padding:56px 0}
+h2{font-weight:600;font-size:clamp(34px,5vw,64px);line-height:1;letter-spacing:-.01em;margin:0 0 28px}
+h3{font-weight:600;font-size:22px;margin:0 0 12px}
+.kicker{font-weight:500;font-size:15px;letter-spacing:.04em;text-transform:uppercase;opacity:.8;margin:0 0 10px}
+
+/* nav strip */
+nav.top{position:sticky;top:0;z-index:5;background:var(--yellow);border-bottom:1.5px solid var(--ink)}
+nav.top .wrap{display:flex;align-items:center;gap:22px;height:52px}
+nav.top .logo{font-weight:700;font-size:21px;text-decoration:none;margin-right:auto}
+nav.top a.link{font-size:15px;text-decoration:none}
+nav.top a.link:hover{text-decoration:underline}
+@media (max-width:760px){nav.top a.link{display:none}}
+
+/* hero */
+.hero{background:var(--pink);padding:40px 0 48px;border-bottom:1.5px solid var(--ink)}
+.hero .name{font-weight:700;font-size:clamp(84px,19vw,260px);line-height:.86;letter-spacing:-.03em;margin:0;word-break:break-word}
+.hero .row{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:24px;margin-top:24px}
+.hero .meta{font-size:clamp(18px,2.2vw,26px);font-weight:500;max-width:620px}
+.hero .today-big{display:flex;align-items:baseline;gap:12px}
+.hero .today-big b{font-weight:700;font-size:clamp(64px,10vw,140px);line-height:.9}
+.hero .today-big span{font-size:20px}
+
+/* stats */
+.stats{background:var(--green);color:var(--white)}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-bottom:36px}
+@media (max-width:860px){.tiles{grid-template-columns:repeat(2,1fr)}}
+.tile{border:1.5px solid rgba(255,255,255,.55);border-radius:var(--radius);padding:20px 22px}
+.tile .v{font-weight:700;font-size:clamp(44px,6vw,72px);line-height:1}
+.tile .l{font-size:16px;opacity:.9;margin-top:6px}
+.chart-card{background:var(--green-deep);border-radius:var(--radius);padding:22px 22px 14px;margin-bottom:18px;position:relative}
+.chart-card .head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.chart-card .head small{opacity:.85}
+.bars{display:flex;align-items:flex-end;gap:2px;height:190px;margin-top:14px}
+.bars .b{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;cursor:default;position:relative}
+.bars .b i{display:block;background:var(--white);border-radius:4px 4px 0 0;min-height:2px}
+.bars .b.empty i{background:rgba(255,255,255,.25)}
+.bars .b.is-today i{background:var(--yellow)}
+.bars .b:hover i,.bars .b:focus i{background:var(--pink-soft)}
+.axis{display:flex;gap:2px;font-size:12px;opacity:.8;margin-top:6px}
+.axis span{flex:1;text-align:center}
+.two{display:grid;grid-template-columns:1fr 1.4fr;gap:18px}
+@media (max-width:860px){.two{grid-template-columns:1fr}}
+.hbar{display:grid;grid-template-columns:150px 1fr 48px;align-items:center;gap:12px;padding:7px 0}
+.hbar .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hbar .track{height:14px;background:rgba(255,255,255,.18);border-radius:7px;overflow:hidden}
+.hbar .fill{height:100%;background:var(--white);border-radius:7px}
+.hbar .p{text-align:right;font-variant-numeric:tabular-nums}
+.tip{position:fixed;pointer-events:none;background:var(--ink);color:#fff;padding:8px 12px;border-radius:12px;font-size:14px;z-index:20;opacity:0;transition:opacity .1s;max-width:240px}
+details.table{margin-top:10px}
+details.table summary{cursor:pointer;font-size:14px;opacity:.9}
+details.table table{width:100%;border-collapse:collapse;font-size:14px;margin-top:8px}
+details.table td,details.table th{padding:4px 6px;border-bottom:1px solid rgba(255,255,255,.2);text-align:left}
+
+/* today */
+.today{background:var(--cream)}
+.cols{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+@media (max-width:860px){.cols{grid-template-columns:1fr}}
+.col{background:var(--white);border:1.5px solid var(--ink);border-radius:var(--radius);padding:20px}
+.col.now{background:var(--yellow)}
+.col .ph{display:flex;justify-content:space-between;align-items:baseline}
+.col .ph h3{margin:0}
+.check{display:flex;align-items:center;gap:14px;padding:10px 0;border-top:1px solid var(--line);cursor:pointer;font-size:19px}
+.check:first-of-type{border-top:0}
+.check input{appearance:none;width:30px;height:30px;border:2.5px solid var(--ink);border-radius:50%;flex:none;display:grid;place-content:center;cursor:pointer;background:#fff}
+.check input:checked{background:var(--ink)}
+.check input:checked::after{content:"";width:12px;height:7px;border:3px solid #fff;border-top:0;border-right:0;transform:translate(0,-2px) rotate(-45deg)}
+.check input:focus-visible{outline:3px solid var(--green);outline-offset:2px}
+.check.done span{color:var(--muted);text-decoration:line-through}
+
+/* habits */
+.habits{background:var(--yellow);border-top:1.5px solid var(--ink);border-bottom:1.5px solid var(--ink)}
+.plist{background:var(--white);border:1.5px solid var(--ink);border-radius:var(--radius);padding:16px 20px;margin-bottom:18px}
+.hrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 0;border-top:1px solid var(--line)}
+.hrow:first-of-type{border-top:0}
+.hrow .t{flex:1 1 200px;font-size:18px;min-width:0}
+.hrow input.t{padding:6px 12px;border:1.5px solid var(--ink);border-radius:14px}
+.days{display:inline-flex;gap:4px;flex-wrap:wrap}
+.days button{width:34px;height:34px;border-radius:50%;border:1.5px solid var(--ink);background:#fff;font-size:13px;font-weight:600;cursor:pointer;padding:0}
+.days button.on{background:var(--ink);color:#fff}
+.btn{border:1.5px solid var(--ink);background:#fff;border-radius:999px;padding:7px 16px;cursor:pointer;font-weight:500}
+.btn:hover{background:var(--cream)}
+.btn.primary{background:var(--ink);color:#fff}
+.btn.primary:hover{background:#333}
+.btn.icon{padding:6px 11px}
+.btn.danger{color:#b3261e;border-color:#b3261e}
+.addrow{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding-top:12px;margin-top:8px;border-top:1.5px dashed var(--line)}
+.addrow input[type=text]{flex:1 1 220px;padding:9px 14px;border:1.5px solid var(--ink);border-radius:999px;background:#fff}
+.seg{display:inline-flex;border:1.5px solid var(--ink);border-radius:999px;overflow:hidden}
+.seg button{border:0;background:#fff;padding:7px 14px;cursor:pointer;font-weight:500}
+.seg button.on{background:var(--ink);color:#fff}
+.status{min-height:1.4em;font-size:15px}
+
+/* events */
+.events{background:var(--pink-soft)}
+.form{background:var(--white);border:1.5px solid var(--ink);border-radius:var(--radius);padding:20px;display:grid;gap:14px;margin-bottom:22px}
+.form .r{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.form input[type=text],.form input[type=date],.form input[type=time]{padding:9px 14px;border:1.5px solid var(--ink);border-radius:999px;background:#fff}
+.form input[type=text]{flex:1 1 260px}
+.evlist{list-style:none;margin:0;padding:0;background:var(--white);border:1.5px solid var(--ink);border-radius:var(--radius);overflow:hidden}
+.evlist li{display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:14px 20px;border-top:1px solid var(--line)}
+.evlist li:first-child{border-top:0}
+.evlist .when{min-width:170px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.evlist .t{flex:1 1 200px;font-size:18px}
+
+/* kindle */
+.kindle{background:var(--ink);color:#fff}
+.kindle .btn{background:transparent;color:#fff;border-color:#fff}
+.kindle .btn.primary{background:#fff;color:var(--ink)}
+.kgrid{display:grid;grid-template-columns:minmax(260px,420px) 1fr;gap:36px;align-items:start}
+@media (max-width:860px){.kgrid{grid-template-columns:1fr}}
+.kframe{background:#e9e7e1;border-radius:34px;padding:22px;border:1.5px solid #fff}
+.kframe img{width:100%;display:block;border-radius:6px;background:#fff}
+.ktabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.ktabs button{border:1.5px solid #fff;background:transparent;color:#fff;border-radius:999px;padding:6px 14px;cursor:pointer}
+.ktabs button.on{background:#fff;color:var(--ink)}
+.kset label{display:block;margin:18px 0 6px;font-size:15px;opacity:.85}
+.kset input{width:100%;max-width:360px;padding:10px 14px;border-radius:999px;border:1.5px solid #fff;background:transparent;color:#fff}
+.kset .r{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+footer{padding:30px 0 50px;color:var(--muted);font-size:14px}
+:focus-visible{outline:3px solid var(--green);outline-offset:2px}
+</style>
+</head>
+<body>
+<nav class="top" aria-label="Sections">
+  <div class="wrap">
+    <a class="logo" href="#top" id="logo">kid planner</a>
+    <a class="link" href="#stats">Stats</a>
+    <a class="link" href="#today">Today</a>
+    <a class="link" href="#habits">Habits</a>
+    <a class="link" href="#events">Events</a>
+    <a class="link" href="#kindle">Kindle</a>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <h1 class="name" id="hero-name">Planner</h1>
+    <div class="row">
+      <div class="meta" id="hero-meta">Loading…</div>
+      <div class="today-big" aria-live="polite"><b id="hero-count">–</b><span id="hero-count-l">done today</span></div>
+    </div>
+  </div>
+</header>
+
+<section class="band stats" id="stats">
+  <div class="wrap">
+    <p class="kicker">Command center</p>
+    <h2>How it's going</h2>
+    <div class="tiles">
+      <div class="tile"><div class="v" id="s-today">–</div><div class="l">today</div></div>
+      <div class="tile"><div class="v" id="s-week">–</div><div class="l">last 7 days</div></div>
+      <div class="tile"><div class="v" id="s-streak">–</div><div class="l">perfect-day streak <span id="s-best"></span></div></div>
+      <div class="tile"><div class="v" id="s-perfect">–</div><div class="l">perfect days (4 weeks)</div></div>
+    </div>
+    <div class="chart-card">
+      <div class="head"><h3>Habits done per day</h3><small>Last 4 weeks · yellow = today</small></div>
+      <div class="bars" id="daybars" role="img" aria-label="Daily completion chart"></div>
+      <div class="axis" id="dayaxis" aria-hidden="true"></div>
+      <details class="table"><summary>Show as table</summary><table id="daytable"></table></details>
+    </div>
+    <div class="two">
+      <div class="chart-card">
+        <div class="head"><h3>By time of day</h3><small>4 weeks</small></div>
+        <div id="periodbars" style="margin-top:12px"></div>
+      </div>
+      <div class="chart-card">
+        <div class="head"><h3>Each habit</h3><small>4 weeks · best first</small></div>
+        <div id="habitbars" style="margin-top:12px;max-height:330px;overflow:auto"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band today" id="today">
+  <div class="wrap">
+    <p class="kicker" id="today-kicker">Today</p>
+    <h2>Today's checklist</h2>
+    <div class="cols" id="today-cols"></div>
+  </div>
+</section>
+
+<section class="band habits" id="habits">
+  <div class="wrap">
+    <p class="kicker">Routine</p>
+    <h2>Habits &amp; activities</h2>
+    <p style="margin-top:-12px">Tap the day circles to choose when a habit shows up. Changes reach the Kindle within a minute.</p>
+    <div id="habit-lists"></div>
+    <div class="status" id="habit-status" role="status"></div>
+  </div>
+</section>
+
+<section class="band events" id="events">
+  <div class="wrap">
+    <p class="kicker">Calendar</p>
+    <h2>Events</h2>
+    <div class="form" id="ev-form">
+      <div class="r">
+        <input type="text" id="ev-title" placeholder="New event, e.g. Swimming" maxlength="60" aria-label="Event title">
+        <input type="time" id="ev-time" aria-label="Time (leave empty for all day)" title="Leave empty for all day">
+      </div>
+      <div class="r">
+        <span>How often:</span>
+        <div class="seg" id="ev-rep">
+          <button data-r="none" class="on">Once</button><button data-r="daily">Every day</button><button data-r="days">Specific days</button>
+        </div>
+        <input type="date" id="ev-date" aria-label="Date">
+        <span class="days" id="ev-days" hidden></span>
+      </div>
+      <div class="r"><button class="btn primary" id="ev-add">Add event</button><span class="status" id="ev-status" role="status"></span></div>
+    </div>
+    <h3>Coming up (7 days)</h3>
+    <ul class="evlist" id="ev-upcoming"></ul>
+    <h3 style="margin-top:28px">All events</h3>
+    <ul class="evlist" id="ev-all"></ul>
+  </div>
+</section>
+
+<section class="band kindle" id="kindle">
+  <div class="wrap kgrid">
+    <div>
+      <div class="ktabs" id="ktabs">
+        <button data-v="day" class="on">Day</button><button data-v="week">Week</button><button data-v="month">Month</button><button data-v="lock">Lock</button><button data-v="compose">Add</button>
+      </div>
+      <div class="kframe"><img id="kprev" alt="Preview of the Kindle display"></div>
+    </div>
+    <div class="kset">
+      <p class="kicker">Device</p>
+      <h2>Kindle display</h2>
+      <p id="k-state" style="font-size:20px"></p>
+      <div class="r">
+        <button class="btn" id="k-stop">Return to normal Kindle</button>
+        <button class="btn primary" id="k-run">Show display</button>
+      </div>
+      <label for="set-name">Child name (title on the Kindle)</label>
+      <div class="r"><input id="set-name" maxlength="30"></div>
+      <label for="set-lock">Name on the lock screen</label>
+      <div class="r"><input id="set-lock" maxlength="40" placeholder="e.g. Naqi Fathis"></div>
+      <div class="r" style="margin-top:14px"><button class="btn primary" id="save-set">Save names</button><span class="status" id="set-status" role="status"></span></div>
+      <p style="opacity:.75;margin-top:26px;font-size:15px">Press the Kindle's power button to lock it: the light turns off and the lock screen shows the clock and the name. Press again to unlock.</p>
+    </div>
+  </div>
+</section>
+
+<footer><div class="wrap">Kid Planner · Kindle display + web dashboard</div></footer>
+<div class="tip" id="tip" role="tooltip"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const PERIODS = [["morning", "Morning"], ["afternoon", "Afternoon"], ["night", "Evening"]];
+const DAY_LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
+const WX_EN = { 0: "Sunny", 1: "Mostly sunny", 2: "Partly cloudy", 3: "Cloudy", 45: "Foggy", 48: "Foggy", 51: "Drizzle", 53: "Drizzle", 55: "Drizzle", 56: "Icy drizzle", 57: "Icy drizzle", 61: "Light rain", 63: "Rain", 65: "Heavy rain", 66: "Icy rain", 67: "Icy rain", 71: "Light snow", 73: "Snow", 75: "Heavy snow", 77: "Snow", 80: "Showers", 81: "Showers", 82: "Heavy showers", 85: "Snow showers", 86: "Snow showers", 95: "Thunderstorm", 96: "Thunderstorm", 99: "Thunderstorm" };
+const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+let S = null, ST = null, editing = null, pv = "day", evRepeat = "none", evDays = new Set();
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+  if (r.status === 401) {
+    document.body.innerHTML = '<div class="hero" style="min-height:100vh"><div class="wrap"><h1 class="name">private</h1><p class="meta">Open your personal link (the one ending in <code>/login?k=…</code>) once on this device.</p></div></div>';
+    throw new Error("unauthorized");
+  }
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+function el(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (k === "class") e.className = v;
+    else if (v !== false && v != null) e.setAttribute(k, v === true ? "" : v);
+  }
+  for (const k of kids) if (k != null) e.append(k);
+  return e;
+}
+const pct = (x) => Math.round(x * 100) + "%";
+const fmtDate = (s, opts) => new Date(s + "T12:00").toLocaleDateString(undefined, opts);
+
+// ---------------------------------------------------------------- tooltip
+const tip = $("tip");
+function showTip(e, html) { tip.innerHTML = html; tip.style.opacity = 1; moveTip(e); }
+function moveTip(e) {
+  const x = e.clientX ?? (e.target.getBoundingClientRect().left + 10), y = e.clientY ?? e.target.getBoundingClientRect().top;
+  tip.style.left = Math.min(window.innerWidth - tip.offsetWidth - 10, x + 14) + "px";
+  tip.style.top = Math.max(10, y - tip.offsetHeight - 12) + "px";
+}
+function hideTip() { tip.style.opacity = 0; }
+
+// ---------------------------------------------------------------- load
+async function load() {
+  [S, ST] = await Promise.all([api("/api/state"), api("/api/stats")]);
+  renderHero(); renderStats(); renderToday(); renderHabits(); renderEvents(); renderKindle();
+}
+
+function renderHero() {
+  const name = S.child_name || "Planner";
+  $("hero-name").textContent = name.toLowerCase();
+  $("logo").textContent = (S.child_name ? S.child_name.toLowerCase() + "'s" : "kid") + " planner";
+  document.title = (S.child_name ? S.child_name + "'s " : "") + "Planner";
+  const wx = S.weather;
+  const parts = [fmtDate(S.today, { weekday: "long", day: "numeric", month: "long" })];
+  if (wx) parts.push(`${Math.round(wx.temp)}° · ${WX_EN[wx.code] || wx.text}`);
+  if (S.city) parts.push(S.city);
+  $("hero-meta").textContent = parts.join("  ·  ");
+  let n = 0, t = 0;
+  for (const [p] of PERIODS) for (const h of S.today_habits[p]) { t++; if (S.done.includes(h.id) || (h.alias || []).some((a) => S.done.includes(a))) n++; }
+  $("hero-count").textContent = `${n}/${t}`;
+  $("hero-count-l").textContent = t && n === t ? "all done today!" : "done today";
+}
+
+function renderStats() {
+  const days = ST.days, last = days[days.length - 1];
+  $("s-today").textContent = last.total ? pct(last.done / last.total) : "–";
+  $("s-week").textContent = pct(ST.week_rate);
+  $("s-streak").textContent = ST.streak + (ST.streak === 1 ? " day" : " days");
+  $("s-best").textContent = ST.best_streak ? `(best ${ST.best_streak})` : "";
+  $("s-perfect").textContent = ST.perfect_days;
+
+  const bars = $("daybars"), axis = $("dayaxis"), table = $("daytable");
+  bars.replaceChildren(); axis.replaceChildren();
+  table.replaceChildren(el("tr", {}, el("th", {}, "Day"), el("th", {}, "Done"), el("th", {}, "Rate")));
+  days.forEach((d, i) => {
+    const rate = d.total ? d.done / d.total : 0;
+    const isToday = i === days.length - 1;
+    const label = `${fmtDate(d.date, { weekday: "short", day: "numeric", month: "short" })}: ${d.done} of ${d.total} (${pct(rate)})`;
+    const b = el("div", { class: "b" + (isToday ? " is-today" : "") + (!d.done ? " empty" : ""), tabindex: "0", "aria-label": label },
+      el("i", { style: `height:${Math.max(1.5, rate * 100)}%` }));
+    const html = `<b>${fmtDate(d.date, { weekday: "long", day: "numeric", month: "short" })}</b><br>${d.done} of ${d.total} habits · ${pct(rate)}${d.events ? `<br>${d.events} event${d.events > 1 ? "s" : ""}` : ""}`;
+    b.addEventListener("mouseenter", (e) => showTip(e, html));
+    b.addEventListener("mousemove", moveTip);
+    b.addEventListener("mouseleave", hideTip);
+    b.addEventListener("focus", (e) => showTip(e, html));
+    b.addEventListener("blur", hideTip);
+    bars.append(b);
+    axis.append(el("span", {}, d.weekday === 0 || isToday ? String(+d.date.slice(8)) : ""));
+    table.append(el("tr", {}, el("td", {}, fmtDate(d.date, { weekday: "short", day: "numeric", month: "short" })), el("td", {}, `${d.done}/${d.total}`), el("td", {}, pct(rate))));
+  });
+
+  const pb = $("periodbars"); pb.replaceChildren();
+  ST.periods.forEach((p, i) => pb.append(hbar(PERIODS[i][1], p.rate, `${p.done} of ${p.total}`)));
+  const hb = $("habitbars"); hb.replaceChildren();
+  if (!ST.habits.length) hb.append(el("p", {}, "No data yet. Ticks will show up here."));
+  ST.habits.forEach((h) => hb.append(hbar(h.title, h.rate, `${h.done} of ${h.total} days`)));
+}
+function hbar(label, rate, detail) {
+  const row = el("div", { class: "hbar", tabindex: "0", "aria-label": `${label}: ${pct(rate)}, ${detail}` },
+    el("span", { class: "t", title: label }, label),
+    el("div", { class: "track" }, el("div", { class: "fill", style: `width:${Math.max(0, rate * 100)}%` })),
+    el("span", { class: "p" }, pct(rate)));
+  const html = `<b>${label}</b><br>${pct(rate)} · ${detail}`;
+  row.addEventListener("mouseenter", (e) => showTip(e, html));
+  row.addEventListener("mousemove", moveTip);
+  row.addEventListener("mouseleave", hideTip);
+  return row;
+}
+
+function renderToday() {
+  $("today-kicker").textContent = fmtDate(S.today, { weekday: "long", day: "numeric", month: "long" });
+  const box = $("today-cols"); box.replaceChildren();
+  PERIODS.forEach(([p, label], i) => {
+    const items = S.today_habits[p] || [];
+    const isD = (h) => S.done.includes(h.id) || (h.alias || []).some((a) => S.done.includes(a));
+    const n = items.filter(isD).length;
+    const col = el("div", { class: "col" + (i === S.period ? " now" : "") },
+      el("div", { class: "ph" }, el("h3", {}, label), el("span", {}, items.length ? `${n}/${items.length}` : "")));
+    if (!items.length) col.append(el("p", { style: "color:var(--muted)" }, "Nothing planned"));
+    for (const h of items) {
+      const cb = el("input", { type: "checkbox", "aria-label": h.title });
+      cb.checked = isD(h);
+      cb.addEventListener("change", async () => { await api("/api/toggle", { key: h.id }); load(); });
+      col.append(el("label", { class: "check" + (cb.checked ? " done" : "") }, cb, el("span", {}, h.title)));
+    }
+    box.append(col);
+  });
+}
+
+// ---------------------------------------------------------------- habits editor
+function dayPicker(set, onChange) {
+  const wrap = el("span", { class: "days", role: "group", "aria-label": "Days" });
+  DAY_LETTERS.forEach((l, i) => {
+    const b = el("button", { type: "button", class: set.has(i) ? "on" : "", "aria-pressed": set.has(i) ? "true" : "false", title: DAY_NAMES[i], "aria-label": DAY_NAMES[i] }, l);
+    b.onclick = () => {
+      if (set.has(i)) { if (set.size === 1) return; set.delete(i); } else set.add(i);
+      b.classList.toggle("on", set.has(i)); b.setAttribute("aria-pressed", set.has(i));
+      onChange && onChange(set);
+    };
+    wrap.append(b);
+  });
+  return wrap;
+}
+function daysText(days) {
+  const s = [...days].sort().join(",");
+  if (s === "0,1,2,3,4,5,6") return "every day";
+  if (s === "0,1,2,3,4") return "weekdays";
+  if (s === "5,6") return "weekend";
+  return [...days].sort().map((d) => DAY_NAMES[d].slice(0, 3)).join(", ");
+}
+function flash(id, msg) { $(id).textContent = msg; setTimeout(() => { if ($(id).textContent === msg) $(id).textContent = ""; }, 4000); }
+
+function renderHabits() {
+  const box = $("habit-lists"); box.replaceChildren();
+  for (const [p, label] of PERIODS) {
+    const list = el("div", { class: "plist" }, el("h3", {}, label));
+    for (const h of S.habits[p] || []) {
+      if (editing === h.id) {
+        const inp = el("input", { class: "t", type: "text", value: h.title, maxlength: "60", "aria-label": "Habit title" });
+        const days = new Set(h.days);
+        const sel = el("select", { "aria-label": "Time of day", class: "btn" }, ...PERIODS.map(([k, l]) => el("option", { value: k, selected: k === p }, l)));
+        const save = async () => {
+          if (!inp.value.trim()) return;
+          await api("/api/habit/update", { id: h.id, title: inp.value.trim(), days: [...days], period: sel.value });
+          editing = null; flash("habit-status", "Saved."); load();
+        };
+        inp.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); if (e.key === "Escape") { editing = null; renderHabits(); } });
+        list.append(el("div", { class: "hrow" }, inp, dayPicker(days), sel,
+          el("button", { class: "btn primary", onclick: save }, "Save"),
+          el("button", { class: "btn", onclick: () => { editing = null; renderHabits(); } }, "Cancel")));
+        setTimeout(() => inp.focus(), 0);
+      } else {
+        const days = new Set(h.days);
+        list.append(el("div", { class: "hrow" },
+          el("span", { class: "t" }, h.title, el("small", { style: "color:var(--muted);margin-left:10px" }, daysText(h.days))),
+          dayPicker(days, async (set) => { await api("/api/habit/update", { id: h.id, days: [...set] }); flash("habit-status", `“${h.title}”: ${daysText(set)}`); load(); }),
+          el("button", { class: "btn icon", title: "Move up", "aria-label": "Move up", onclick: async () => { await api("/api/habit/move", { id: h.id, dir: -1 }); load(); } }, "↑"),
+          el("button", { class: "btn icon", title: "Move down", "aria-label": "Move down", onclick: async () => { await api("/api/habit/move", { id: h.id, dir: 1 }); load(); } }, "↓"),
+          el("button", { class: "btn", onclick: () => { editing = h.id; renderHabits(); } }, "Edit"),
+          el("button", { class: "btn danger", onclick: async () => { if (!confirm(`Delete “${h.title}”?`)) return; await api("/api/habit/delete", { id: h.id }); flash("habit-status", "Deleted."); load(); } }, "Delete")));
+      }
+    }
+    // add row
+    const days = new Set([0, 1, 2, 3, 4, 5, 6]);
+    const inp = el("input", { type: "text", placeholder: `Add a ${label.toLowerCase()} habit`, maxlength: "60", "aria-label": `New ${label} habit` });
+    const add = async () => {
+      if (!inp.value.trim()) { inp.focus(); return; }
+      await api("/api/habit", { title: inp.value.trim(), period: p, days: [...days] });
+      flash("habit-status", "Added."); load();
+    };
+    inp.addEventListener("keydown", (e) => { if (e.key === "Enter") add(); });
+    list.append(el("div", { class: "addrow" }, inp, dayPicker(days), el("button", { class: "btn primary", onclick: add }, "Add")));
+    box.append(list);
+  }
+}
+
+// ---------------------------------------------------------------- events
+function repeatText(e) {
+  if (e.repeat === "daily") return "Every day";
+  if (e.repeat === "days") return "Every " + daysText(e.days);
+  return fmtDate(e.date, { weekday: "short", day: "numeric", month: "short" });
+}
+function setRep(r) {
+  evRepeat = r;
+  for (const b of $("ev-rep").children) b.classList.toggle("on", b.dataset.r === r);
+  $("ev-date").hidden = r !== "none";
+  $("ev-days").hidden = r !== "days";
+}
+$("ev-rep").onclick = (e) => { if (e.target.dataset.r) setRep(e.target.dataset.r); };
+function initEvDays() {
+  evDays = new Set([S.weekday]);
+  $("ev-days").replaceWith(Object.assign(dayPicker(evDays), { id: "ev-days", hidden: evRepeat !== "days" }));
+}
+$("ev-add").onclick = async () => {
+  const title = $("ev-title").value.trim();
+  if (!title) { $("ev-title").focus(); return; }
+  try {
+    await api("/api/event", { title, time: $("ev-time").value, repeat: evRepeat, date: evRepeat === "none" ? $("ev-date").value || S.today : S.today, days: [...evDays] });
+    $("ev-title").value = ""; $("ev-time").value = ""; flash("ev-status", "Added."); load();
+  } catch (e) { flash("ev-status", e.message); }
+};
+$("ev-title").addEventListener("keydown", (e) => { if (e.key === "Enter") $("ev-add").click(); });
+
+function renderEvents() {
+  if (!$("ev-date").value) $("ev-date").value = S.today;
+  if (!evDays.size) initEvDays();
+  const up = $("ev-upcoming"); up.replaceChildren();
+  const ups = S.upcoming;
+  if (!ups.length) up.append(el("li", {}, el("span", { class: "t", style: "color:var(--muted)" }, "Nothing in the next 7 days")));
+  for (const e of ups) {
+    const when = e.on === S.today ? "Today" : fmtDate(e.on, { weekday: "long", day: "numeric", month: "short" });
+    up.append(el("li", {}, el("span", { class: "when" }, when + (e.time ? " · " + e.time : "")), el("span", { class: "t" }, e.title)));
+  }
+  const all = $("ev-all"); all.replaceChildren();
+  const list = S.events.slice().sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
+  if (!list.length) all.append(el("li", {}, el("span", { class: "t", style: "color:var(--muted)" }, "No events yet")));
+  for (const e of list) {
+    if (editing === "ev:" + e.id) {
+      const t = el("input", { type: "text", value: e.title, maxlength: "60", class: "t", style: "padding:8px 14px;border:1.5px solid var(--ink);border-radius:999px", "aria-label": "Title" });
+      const tm = el("input", { type: "time", value: e.time || "", "aria-label": "Time" });
+      const dt = el("input", { type: "date", value: e.date, "aria-label": "Date" });
+      let rep = e.repeat === "weekly" ? "days" : e.repeat;
+      const days = new Set(e.days && e.days.length ? e.days : [S.weekday]);
+      const dp = dayPicker(days);
+      const seg = el("div", { class: "seg" }, ...[["none", "Once"], ["daily", "Every day"], ["days", "Specific days"]].map(([k, l]) => el("button", { "data-r": k, class: k === rep ? "on" : "" }, l)));
+      const sync = () => { dt.hidden = rep !== "none"; dp.hidden = rep !== "days"; for (const b of seg.children) b.classList.toggle("on", b.dataset.r === rep); };
+      seg.onclick = (ev) => { if (ev.target.dataset.r) { rep = ev.target.dataset.r; sync(); } };
+      sync();
+      const save = async () => {
+        await api("/api/event/update", { id: e.id, title: t.value.trim(), time: tm.value, date: dt.value || e.date, repeat: rep, days: [...days] });
+        editing = null; load();
+      };
+      all.append(el("li", {}, t, tm, seg, dt, dp, el("button", { class: "btn primary", onclick: save }, "Save"), el("button", { class: "btn", onclick: () => { editing = null; renderEvents(); } }, "Cancel")));
+    } else {
+      all.append(el("li", {}, el("span", { class: "when" }, repeatText(e) + (e.time ? " · " + e.time : "")), el("span", { class: "t" }, e.title),
+        el("button", { class: "btn", onclick: () => { editing = "ev:" + e.id; renderEvents(); } }, "Edit"),
+        el("button", { class: "btn danger", onclick: async () => { if (!confirm(`Delete “${e.title}”?`)) return; await api("/api/event/delete", { id: e.id }); load(); } }, "Delete")));
+    }
+  }
+}
+
+// ---------------------------------------------------------------- kindle
+function renderKindle() {
+  $("k-state").textContent = S.kindle_command === "stop" ? "The Kindle is in normal reader mode." : "The Kindle shows the planner display.";
+  if (document.activeElement !== $("set-name")) $("set-name").value = S.child_name || "";
+  if (document.activeElement !== $("set-lock")) $("set-lock").value = S.lock_name || "";
+  refreshPreview();
+}
+function refreshPreview() { $("kprev").src = "/page.png?view=" + pv + "&t=" + Date.now(); }
+$("ktabs").onclick = (e) => {
+  const v = e.target.dataset && e.target.dataset.v; if (!v) return;
+  pv = v; for (const b of $("ktabs").children) b.classList.toggle("on", b.dataset.v === v);
+  refreshPreview();
+};
+$("k-stop").onclick = async () => { await api("/api/kindle", { command: "stop" }); load(); };
+$("k-run").onclick = async () => { await api("/api/kindle", { command: "run" }); load(); };
+$("save-set").onclick = async () => {
+  await api("/api/settings", { child_name: $("set-name").value.trim(), lock_name: $("set-lock").value.trim() });
+  flash("set-status", "Saved."); load();
+};
+
+load();
+setInterval(() => { if (!editing && !["INPUT", "SELECT"].includes(document.activeElement.tagName)) load(); }, 60000);
+</script>
+</body>
+</html>

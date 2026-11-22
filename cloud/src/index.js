@@ -1,0 +1,457 @@
+// Kid Planner on Cloudflare Workers (free plan).
+// Data lives in one KV key. The Kindle display gets a ready PNG; taps are resolved here.
+// The Kindle keeps the UI state (tab, add screen, draft text) and sends it as ?s=...,
+// so switching tabs and typing do not write to KV.
+import {
+  renderBody, renderLock, renderCompose, composeDefaults, drawHeader,
+  habitsOn, isDone, progress, eventsOn, localNow, iso, parseDate, addDays, weekday, periodIndex,
+  PERIODS, ALL_DAYS, W, H, SPLIT,
+} from "./render.js";
+import { encodeRows, assemblePNG } from "./png.js";
+
+const FALLBACK = { city: "Dresden", lat: 51.0504, lon: 13.7373, tz: "Europe/Berlin" };
+const KEY = "data";
+
+const WMO = {
+  0: "Sonnig", 1: "Überwiegend sonnig", 2: "Teils bewölkt", 3: "Bewölkt", 45: "Nebel", 48: "Nebel",
+  51: "Nieselregen", 53: "Nieselregen", 55: "Nieselregen", 56: "Eisiger Niesel", 57: "Eisiger Niesel",
+  61: "Leichter Regen", 63: "Regen", 65: "Starker Regen", 66: "Eisregen", 67: "Eisregen",
+  71: "Leichter Schnee", 73: "Schnee", 75: "Starker Schnee", 77: "Schnee", 80: "Schauer", 81: "Schauer",
+  82: "Starke Schauer", 85: "Schneeschauer", 86: "Schneeschauer", 95: "Gewitter", 96: "Gewitter", 99: "Gewitter",
+};
+
+const newId = () => crypto.randomUUID().replace(/-/g, "").slice(0, 8);
+const cleanDays = (d) => [...new Set((Array.isArray(d) ? d : ALL_DAYS).map(Number).filter((x) => x >= 0 && x <= 6))].sort();
+
+function defaultData() {
+  const h = (titles, days = ALL_DAYS) => titles.map((title) => ({ id: newId(), title, days: [...days], alias: [] }));
+  return {
+    version: 4, child_name: "", lock_name: "", events: [], done: {}, kindle_command: "run", loc: null,
+    habits: {
+      morning: h(["Aufstehen & waschen", "Frühstück", "Zähne putzen"]),
+      afternoon: h(["Hausaufgaben"], [0, 1, 2, 3, 4]),
+      night: h(["Abendessen", "Zähne putzen", "Geschichte & schlafen"]),
+    },
+  };
+}
+
+/** v2/v3 (weekday/weekend lists) -> v4 (one list per period, each habit with its days). */
+function migrate(data) {
+  if (data.version >= 4 && data.habits) return false;
+  const habits = { morning: [], afternoon: [], night: [] };
+  const lists = [["weekday", [0, 1, 2, 3, 4]], ["weekend", [5, 6]]];
+  for (const [p] of PERIODS) {
+    for (const [kind, days] of lists) {
+      for (const it of ((data.routine || {})[kind] || {})[p] || []) {
+        const title = typeof it === "string" ? it : it.title;
+        const id = (typeof it === "object" && it.id) || newId();
+        const same = habits[p].find((h) => h.title === title);
+        if (same) { same.days = cleanDays([...same.days, ...days]); same.alias.push(id); }
+        else habits[p].push({ id, title, days: [...days], alias: [] });
+      }
+    }
+  }
+  for (const [k, r] of Object.entries(data.day_routine || {})) {
+    const wd = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"].indexOf(k);
+    for (const [p] of PERIODS) for (const it of (r || {})[p] || []) {
+      const title = typeof it === "string" ? it : it.title;
+      habits[p].push({ id: it.id || newId(), title, days: [wd], alias: [] });
+    }
+  }
+  data.habits = habits;
+  for (const e of data.events || []) {
+    if (e.repeat === "weekly") { e.repeat = "days"; e.days = [weekday(parseDate(e.date) || new Date())]; }
+    else if (!["none", "daily", "days"].includes(e.repeat)) e.repeat = "none";
+    if (!Array.isArray(e.days)) e.days = [];
+  }
+  data.routine_v3_backup = { routine: data.routine, day_routine: data.day_routine };
+  delete data.routine; delete data.day_routine;
+  data.version = 4;
+  return true;
+}
+
+// ------------------------------------------------------------------ storage
+const BODY_CACHE = new Map();
+function fnv(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(36);
+}
+
+async function load(env, ctx) {
+  const text = await env.KV.get(KEY);
+  const data = text ? JSON.parse(text) : defaultData();
+  const d = defaultData();
+  for (const k of Object.keys(d)) if (data[k] === undefined && k !== "habits") data[k] = d[k];
+  if (migrate(data) || !data.habits) {
+    if (!data.habits) data.habits = d.habits;
+    await save(env, data);
+  }
+  Object.defineProperty(data, "_hash", { value: fnv(text || ""), enumerable: false });
+  return data;
+}
+
+async function save(env, data) {
+  const keys = Object.keys(data.done).sort();
+  for (const k of keys.slice(0, Math.max(0, keys.length - 120))) delete data.done[k];
+  await env.KV.put(KEY, JSON.stringify(data));
+}
+
+function requestLoc(request, data) {
+  const cf = request.cf || {};
+  if (cf.latitude && cf.longitude && cf.timezone) {
+    return { city: cf.city || "", lat: +cf.latitude, lon: +cf.longitude, tz: cf.timezone };
+  }
+  return data.loc || FALLBACK;
+}
+
+async function weather(loc, ctx) {
+  const lat = loc.lat.toFixed(2), lon = loc.lon.toFixed(2);
+  const cacheKey = new Request(`https://weather.cache/v3/${lat},${lon}`);
+  const cache = caches.default;
+  const hit = await cache.match(cacheKey);
+  if (hit) return hit.json();
+  try {
+    const r = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+      "&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=1",
+    );
+    const j = await r.json();
+    const wx = {
+      temp: j.current.temperature_2m, code: j.current.weather_code, text: WMO[j.current.weather_code] || "",
+      hi: j.daily.temperature_2m_max[0], lo: j.daily.temperature_2m_min[0],
+    };
+    ctx.waitUntil(cache.put(cacheKey, new Response(JSON.stringify(wx), {
+      headers: { "Content-Type": "application/json", "Cache-Control": "max-age=600" },
+    })));
+    return wx;
+  } catch {
+    return null;
+  }
+}
+
+// ------------------------------------------------------------------ Kindle UI state
+// home: {m:"h", v:"day"|"week"|"month"|"day:YYYY-MM-DD"}   compose: see composeDefaults
+function decodeState(s, now) {
+  if (!s) return { m: "h", v: "day" };
+  try {
+    const raw = atob(s.replace(/-/g, "+").replace(/_/g, "/"));
+    const st = JSON.parse(new TextDecoder().decode(Uint8Array.from(raw, (c) => c.charCodeAt(0))));
+    if (st.m !== "c") {
+      const v = String(st.v || "day");
+      return { m: "h", v: /^(day|week|month)(:\d{4}-\d{2}-\d{2})?$/.test(v) ? v : "day" };
+    }
+    const d = composeDefaults(now);
+    const t = st.t === "h" ? "h" : "e";
+    let r = ["once", "daily", "days"].includes(st.r) ? st.r : d.r;
+    if (t === "h" && r === "once") r = "daily";
+    return {
+      m: "c", t, r, s: String(st.s || "").slice(0, 60),
+      d: Math.min(6, Math.max(0, st.d | 0)), w: (st.w | 0) & 127,
+      tm: Math.min(1439, Math.max(-1, Number.isFinite(st.tm) ? st.tm : -1)),
+      p: [0, 1, 2].includes(st.p) ? st.p : d.p, sh: st.sh ? 1 : 0,
+    };
+  } catch {
+    return { m: "h", v: "day" };
+  }
+}
+function encodeState(st) {
+  if (!st || (st.m === "h" && (!st.v || st.v === "day"))) return "";
+  const bytes = new TextEncoder().encode(JSON.stringify(st));
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function body(data, view, now) {
+  const key = `${view}|${iso(now.date)}|${periodIndex(now)}|${data._hash}`;
+  let b = BODY_CACHE.get(key);
+  if (!b) {
+    const c = renderBody(data, view, now);
+    b = { img: c.g, zones: c.zones, piece: encodeRows(c.g, SPLIT, H, true) };
+    BODY_CACHE.set(key, b);
+    while (BODY_CACHE.size > 8) BODY_CACHE.delete(BODY_CACHE.keys().next().value);
+  }
+  return b;
+}
+
+function renderPage(kind, data, st, { now, loc, wx, battery }) {
+  if (kind === "lock") return assemblePNG(W, H, [encodeRows(renderLock(data, now, loc, wx).g, 0, H, true)]);
+  if (kind === "compose") return assemblePNG(W, H, [encodeRows(renderCompose(data, st, now).g, 0, H, true)]);
+  const b = body(data, st.v || "day", now);
+  drawHeader(b.img, data, now, loc, wx, battery);
+  return assemblePNG(W, H, [encodeRows(b.img, 0, SPLIT, false), b.piece]);
+}
+
+function hit(zones, x, y) {
+  for (const [x0, y0, x1, y1, action] of zones) if (x >= x0 && x <= x1 && y >= y0 && y <= y1) return action;
+  return null;
+}
+
+function toggle(data, dateStr, id) {
+  const done = new Set(data.done[dateStr] || []);
+  // a merged habit may have old ids (alias); toggling off removes all of them
+  const all = [];
+  for (const [p] of PERIODS) for (const h of data.habits[p]) if (h.id === id || (h.alias || []).includes(id)) all.push(h.id, ...(h.alias || []));
+  const ids = all.length ? all : [id];
+  if (ids.some((x) => done.has(x))) ids.forEach((x) => done.delete(x));
+  else done.add(ids[0]);
+  data.done[dateStr] = [...done].sort();
+}
+
+function applyAction(action, st, data, now) {
+  if (!action) return { st, write: false };
+  const [kind, rest] = action.split(/:(.*)/s);
+  if (st.m !== "c") {
+    if (kind === "toggle") {
+      const [d, id] = rest.split(/:(.*)/s);
+      toggle(data, d, id);
+      return { st, write: true };
+    }
+    if (kind === "view") return { st: { m: "h", v: rest }, write: false };
+    if (kind === "goto") return { st: { m: "h", v: `day:${rest}` }, write: false };
+    if (kind === "compose") return { st: composeDefaults(now), write: false };
+    return { st, write: false };
+  }
+  const s = { ...st };
+  switch (kind) {
+    case "key":
+      if (s.s.length < 60) s.s += s.sh && rest !== "ß" ? rest.toUpperCase() : rest;
+      s.sh = 0;
+      break;
+    case "space": if (s.s && !s.s.endsWith(" ") && s.s.length < 60) s.s += " "; break;
+    case "back": s.s = [...s.s].slice(0, -1).join(""); if (!s.s) s.sh = 1; break;
+    case "shift": s.sh = s.sh ? 0 : 1; break;
+    case "type": s.t = rest === "h" ? "h" : "e"; if (s.t === "h" && s.r === "once") s.r = "daily"; break;
+    case "rep": s.r = rest; if (rest === "days" && !s.w) s.w = 1 << weekday(now.date); break;
+    case "day": s.d = Math.min(6, Math.max(0, +rest | 0)); break;
+    case "wd": s.w ^= 1 << (+rest | 0); break;
+    case "allday": s.tm = -1; break;
+    case "tminus": case "tplus":
+      if (s.tm < 0) s.tm = Math.min(23, now.hour + 1) * 60;
+      else s.tm = Math.min(23 * 60 + 30, Math.max(0, s.tm + (kind === "tplus" ? 30 : -30)));
+      break;
+    case "period": s.p = Math.min(2, Math.max(0, +rest | 0)); break;
+    case "cancel": return { st: { m: "h", v: "day" }, write: false };
+    case "save": {
+      const title = s.s.trim();
+      if (!title || (s.r === "days" && !s.w)) return { st: s, write: false };
+      const days = s.r === "days" ? ALL_DAYS.filter((i) => s.w & (1 << i)) : [...ALL_DAYS];
+      if (s.t === "e") {
+        const time = s.tm < 0 ? "" : `${String(Math.floor(s.tm / 60)).padStart(2, "0")}:${String(s.tm % 60).padStart(2, "0")}`;
+        data.events.push({
+          id: newId(), date: iso(addDays(now.date, s.r === "once" ? s.d : 0)), time, title,
+          repeat: s.r === "once" ? "none" : s.r, days: s.r === "days" ? days : [],
+        });
+      } else {
+        data.habits[PERIODS[s.p][0]].push({ id: newId(), title, days, alias: [] });
+      }
+      return { st: { m: "h", v: "day" }, write: true };
+    }
+  }
+  return { st: s, write: false };
+}
+
+// ------------------------------------------------------------------ stats for the web dashboard
+function stats(data, now, nDays = 28) {
+  const days = [];
+  const perHabit = new Map();
+  const perPeriod = PERIODS.map(([p]) => ({ period: p, done: 0, total: 0 }));
+  for (let i = nDays - 1; i >= 0; i--) {
+    const day = addDays(now.date, -i);
+    const r = habitsOn(data, day);
+    const done = new Set(data.done[iso(day)] || []);
+    let n = 0, t = 0;
+    PERIODS.forEach(([p], pi) => {
+      for (const h of r[p]) {
+        const ok = isDone(done, h);
+        t++; if (ok) n++;
+        if (i > 0 || ok) { // today only counts once it is done
+          perPeriod[pi].total++; if (ok) perPeriod[pi].done++;
+          const s = perHabit.get(h.id) || { id: h.id, title: h.title, period: p, done: 0, total: 0 };
+          s.total++; if (ok) s.done++;
+          perHabit.set(h.id, s);
+        }
+      }
+    });
+    days.push({ date: iso(day), weekday: weekday(day), done: n, total: t, events: eventsOn(data, day).length });
+  }
+  // streak: consecutive fully-done days, counting back from yesterday (today if already complete)
+  let streak = 0;
+  for (let i = days.length - 1; i >= 0; i--) {
+    const d = days[i];
+    if (i === days.length - 1 && d.done < d.total) continue;
+    if (d.total && d.done === d.total) streak++; else break;
+  }
+  let best = 0, run = 0;
+  for (const d of days) { if (d.total && d.done === d.total) { run++; best = Math.max(best, run); } else run = 0; }
+  const sum = (arr) => arr.reduce((a, d) => [a[0] + d.done, a[1] + d.total], [0, 0]);
+  const [w7d, w7t] = sum(days.slice(-7));
+  const [m28d, m28t] = sum(days);
+  const habitsList = [...perHabit.values()].map((h) => ({ ...h, rate: h.total ? h.done / h.total : 0 }));
+  return {
+    days, streak, best_streak: best,
+    week_rate: w7t ? w7d / w7t : 0, month_rate: m28t ? m28d / m28t : 0,
+    perfect_days: days.filter((d) => d.total && d.done === d.total).length,
+    periods: perPeriod.map((p) => ({ ...p, rate: p.total ? p.done / p.total : 0 })),
+    habits: habitsList.sort((a, b) => b.rate - a.rate),
+  };
+}
+
+// ------------------------------------------------------------------ auth
+function getCookie(request, name) {
+  const m = (request.headers.get("Cookie") || "").match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
+  return m ? decodeURIComponent(m[1]) : null;
+}
+function authorized(request, url, env) {
+  if (!env.SECRET) return true;
+  const k = url.searchParams.get("k") || request.headers.get("X-Key") || getCookie(request, "kp");
+  if (!k || k.length !== env.SECRET.length) return false;
+  let diff = 0;
+  for (let i = 0; i < k.length; i++) diff |= k.charCodeAt(i) ^ env.SECRET.charCodeAt(i);
+  return diff === 0;
+}
+
+const json = (obj, status = 200) =>
+  new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+const text = (t) => new Response(t, { headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } });
+const png = (bytes, extra = {}) =>
+  new Response(bytes, { headers: { "Content-Type": "image/png", "Cache-Control": "no-store", ...extra } });
+
+// ------------------------------------------------------------------ router
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    const path = url.pathname;
+
+    if (path === "/login") {
+      if (!authorized(request, url, env)) return new Response("Wrong key", { status: 403 });
+      return new Response(null, {
+        status: 302,
+        headers: {
+          Location: "/",
+          "Set-Cookie": `kp=${encodeURIComponent(url.searchParams.get("k"))}; Path=/; Max-Age=31536000; Secure; HttpOnly; SameSite=Lax`,
+        },
+      });
+    }
+    if (!authorized(request, url, env)) return json({ error: "unauthorized" }, 401);
+
+    const data = await load(env, ctx);
+    const loc = requestLoc(request, data);
+    const now = localNow(loc.tz || FALLBACK.tz);
+    const today = iso(now.date);
+
+    // ---- Kindle display
+    if (path === "/kindle/command") return text(data.kindle_command || "run");
+
+    if (path === "/dashboard.png" || path === "/page.png") {
+      const fromKindle = path === "/dashboard.png";
+      if (fromKindle && request.cf && request.cf.city && (!data.loc || data.loc.city !== loc.city)) {
+        data.loc = loc;
+        ctx.waitUntil(save(env, data));
+      }
+      const wx = await weather(loc, ctx);
+      const bat = fromKindle ? (url.searchParams.get("bat") || "").replace(/\D/g, "") || null : null;
+      let kind, st;
+      if (fromKindle) {
+        st = decodeState(url.searchParams.get("s"), now);
+        kind = url.searchParams.get("lock") === "1" ? "lock" : st.m === "c" ? "compose" : "home";
+      } else {
+        const v = url.searchParams.get("view") || "day";
+        kind = v === "lock" ? "lock" : v === "compose" ? "compose" : "home";
+        st = kind === "compose" ? { ...composeDefaults(now), s: "Schwimmen", r: "days", w: 0b0000101, tm: 15 * 60 + 30, sh: 0 }
+          : { m: "h", v: ["day", "week", "month"].includes(v) ? v : "day" };
+      }
+      const bytes = renderPage(kind, data, st, { now, loc, wx, battery: bat });
+      return png(bytes, fromKindle ? { "X-Kindle-Command": data.kindle_command || "run" } : {});
+    }
+
+    if (path === "/tap") {
+      const x = +url.searchParams.get("x"), y = +url.searchParams.get("y");
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return json({ error: "x and y needed" }, 400);
+      const st = decodeState(url.searchParams.get("s"), now);
+      const zones = st.m === "c" ? renderCompose(data, st, now).zones : body(data, st.v || "day", now).zones;
+      const res = applyAction(hit(zones, x, y), st, data, now);
+      if (res.write) await save(env, data);
+      return text(encodeState(res.st));
+    }
+
+    // ---- web dashboard API
+    if (path === "/api/state" && request.method === "GET") {
+      const wx = await weather(loc, ctx);
+      return json({
+        today, weekday: weekday(now.date), hour: now.hour, minute: now.minute, period: periodIndex(now),
+        today_habits: habitsOn(data, now.date), done: data.done[today] || [], habits: data.habits,
+        events: data.events, upcoming: [0, 1, 2, 3, 4, 5, 6].flatMap((i) => eventsOn(data, addDays(now.date, i)).map((e) => ({ ...e, on: iso(addDays(now.date, i)) }))),
+        child_name: data.child_name || "", lock_name: data.lock_name || "",
+        kindle_command: data.kindle_command || "run", weather: wx, city: loc.city || "",
+      });
+    }
+    if (path === "/api/stats" && request.method === "GET") return json(stats(data, now));
+
+    if (request.method === "POST" && path.startsWith("/api/")) {
+      let b;
+      try { b = await request.json(); } catch { return json({ error: "bad json" }, 400); }
+      const findHabit = (id) => {
+        for (const [p] of PERIODS) { const i = data.habits[p].findIndex((h) => h.id === id); if (i >= 0) return [p, i]; }
+        return null;
+      };
+      if (path === "/api/toggle") {
+        toggle(data, b.date && parseDate(b.date) ? b.date : today, String(b.key || ""));
+      } else if (path === "/api/habit") {
+        const title = String(b.title || "").trim().slice(0, 60);
+        const p = PERIODS.some(([k]) => k === b.period) ? b.period : "morning";
+        if (!title) return json({ error: "title needed" }, 400);
+        const days = cleanDays(b.days);
+        if (!days.length) return json({ error: "pick at least one day" }, 400);
+        data.habits[p].push({ id: newId(), title, days, alias: [] });
+      } else if (path === "/api/habit/update") {
+        const f = findHabit(b.id);
+        if (!f) return json({ error: "not found" }, 404);
+        const h = data.habits[f[0]][f[1]];
+        if (b.title !== undefined) h.title = String(b.title).trim().slice(0, 60) || h.title;
+        if (b.days !== undefined) { const d = cleanDays(b.days); if (d.length) h.days = d; }
+        if (b.period && b.period !== f[0] && PERIODS.some(([k]) => k === b.period)) {
+          data.habits[f[0]].splice(f[1], 1);
+          data.habits[b.period].push(h);
+        }
+      } else if (path === "/api/habit/move") {
+        const f = findHabit(b.id);
+        if (!f) return json({ error: "not found" }, 404);
+        const list = data.habits[f[0]], j = f[1] + (b.dir < 0 ? -1 : 1);
+        if (j >= 0 && j < list.length) [list[f[1]], list[j]] = [list[j], list[f[1]]];
+      } else if (path === "/api/habit/delete") {
+        const f = findHabit(b.id);
+        if (f) data.habits[f[0]].splice(f[1], 1);
+      } else if (path === "/api/event" || path === "/api/event/update") {
+        if (!parseDate(b.date)) return json({ error: "bad date" }, 400);
+        const repeat = ["none", "daily", "days"].includes(b.repeat) ? b.repeat : "none";
+        const ev = {
+          date: b.date, time: String(b.time || "").slice(0, 5), title: String(b.title || "").trim().slice(0, 60),
+          repeat, days: repeat === "days" ? cleanDays(b.days) : [],
+        };
+        if (!ev.title) return json({ error: "title needed" }, 400);
+        if (repeat === "days" && !ev.days.length) return json({ error: "pick at least one day" }, 400);
+        if (path === "/api/event") data.events.push({ id: newId(), ...ev });
+        else {
+          const e = data.events.find((e) => e.id === b.id);
+          if (!e) return json({ error: "not found" }, 404);
+          Object.assign(e, ev);
+        }
+      } else if (path === "/api/event/delete") {
+        data.events = data.events.filter((e) => e.id !== b.id);
+      } else if (path === "/api/settings") {
+        if (b.child_name !== undefined) data.child_name = String(b.child_name).slice(0, 30);
+        if (b.lock_name !== undefined) data.lock_name = String(b.lock_name).slice(0, 40);
+      } else if (path === "/api/kindle") {
+        if (!["run", "stop"].includes(b.command)) return json({ error: "bad command" }, 400);
+        data.kindle_command = b.command;
+      } else {
+        return json({ error: "not found" }, 404);
+      }
+      await save(env, data);
+      return json({ ok: true });
+    }
+    return json({ error: "not found" }, 404);
+  },
+};
