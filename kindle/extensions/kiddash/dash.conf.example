@@ -1,5 +1,5 @@
 # Dashboard server on Cloudflare.
-SERVER="https://kid-planner.zaqifathis.workers.dev"
+SERVER="https://<your-worker>.<your-subdomain>.workers.dev"
 # Private key for the server (keep secret).
 KEY="paste the value of cloud/.secret here"
 # Seconds between refreshes.

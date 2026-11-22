@@ -11,7 +11,7 @@ export async function load(url, ctx, next) {
 const R = await import("../src/render.js");
 const P = await import("../src/png.js");
 const data = JSON.parse(readFileSync(new URL("../../server/data.json", import.meta.url)));
-data.child_name = "Naqi";
+data.child_name = "Mia";
 data.events.push({ id: "x1", date: new Date().toISOString().slice(0, 10), time: "17:00", title: "Fußball mit Jonas", repeat: "none" });
 const now = R.localNow("Europe/Berlin");
 const loc = { city: "Dresden" }, wx = { temp: 5.6, text: "Bewölkt", hi: 6, lo: 3 };

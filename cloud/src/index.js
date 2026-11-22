@@ -303,20 +303,33 @@ function getCookie(request, name) {
   const m = (request.headers.get("Cookie") || "").match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
   return m ? decodeURIComponent(m[1]) : null;
 }
+// Where the key may come from:
+//   /login          -> ?k= (once, then a cookie is set)
+//   Kindle routes   -> X-Key header only (no cookie, so other sites cannot make a
+//                      logged-in browser tap the Kindle display)
+//   everything else -> X-Key header or the HttpOnly cookie
+const KINDLE_ROUTES = new Set(["/dashboard.png", "/tap", "/kindle/command"]);
 function authorized(request, url, env) {
-  if (!env.SECRET) return true;
-  const k = url.searchParams.get("k") || request.headers.get("X-Key") || getCookie(request, "kp");
+  if (!env.SECRET) return false; // fail closed if the secret is missing
+  let k;
+  if (url.pathname === "/login") k = url.searchParams.get("k");
+  else if (KINDLE_ROUTES.has(url.pathname)) k = request.headers.get("X-Key");
+  else k = request.headers.get("X-Key") || getCookie(request, "kp");
   if (!k || k.length !== env.SECRET.length) return false;
   let diff = 0;
   for (let i = 0; i < k.length; i++) diff |= k.charCodeAt(i) ^ env.SECRET.charCodeAt(i);
   return diff === 0;
 }
 
+const SEC = {
+  "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer",
+  "X-Frame-Options": "DENY", "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+};
 const json = (obj, status = 200) =>
-  new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
-const text = (t) => new Response(t, { headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } });
+  new Response(JSON.stringify(obj), { status, headers: { ...SEC, "Content-Type": "application/json" } });
+const text = (t) => new Response(t, { headers: { ...SEC, "Content-Type": "text/plain" } });
 const png = (bytes, extra = {}) =>
-  new Response(bytes, { headers: { "Content-Type": "image/png", "Cache-Control": "no-store", ...extra } });
+  new Response(bytes, { headers: { ...SEC, "Content-Type": "image/png", ...extra } });
 
 // ------------------------------------------------------------------ router
 export default {
@@ -325,10 +338,11 @@ export default {
     const path = url.pathname;
 
     if (path === "/login") {
-      if (!authorized(request, url, env)) return new Response("Wrong key", { status: 403 });
+      if (!authorized(request, url, env)) return new Response("Wrong key", { status: 403, headers: SEC });
       return new Response(null, {
         status: 302,
         headers: {
+          ...SEC,
           Location: "/",
           "Set-Cookie": `kp=${encodeURIComponent(url.searchParams.get("k"))}; Path=/; Max-Age=31536000; Secure; HttpOnly; SameSite=Lax`,
         },
@@ -390,6 +404,8 @@ export default {
     if (path === "/api/stats" && request.method === "GET") return json(stats(data, now));
 
     if (request.method === "POST" && path.startsWith("/api/")) {
+      // JSON only: plain HTML forms from other sites cannot send this content type
+      if (!(request.headers.get("Content-Type") || "").startsWith("application/json")) return json({ error: "JSON only" }, 415);
       let b;
       try { b = await request.json(); } catch { return json({ error: "bad json" }, 400); }
       const findHabit = (id) => {
