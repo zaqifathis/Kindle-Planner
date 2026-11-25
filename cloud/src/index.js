@@ -149,6 +149,7 @@ function decodeState(s, now) {
     if (t === "h" && r === "once") r = "daily";
     return {
       m: "c", t, r, s: String(st.s || "").slice(0, t === "m" ? MSG_MAX : 60), f: [1, 2].includes(st.f) ? st.f : 0,
+      k: st.k ? 1 : 0, o: Math.min(MSG_KEEP - 1, Math.max(0, st.o | 0)),
       d: Math.min(6, Math.max(0, st.d | 0)), w: (st.w | 0) & 127,
       tm: Math.min(1439, Math.max(-1, Number.isFinite(st.tm) ? st.tm : -1)),
       p: [0, 1, 2].includes(st.p) ? st.p : d.p, sh: st.sh ? 1 : 0,
@@ -241,9 +242,16 @@ async function waitTelegram(env, offset) {
   }
 }
 
+/** TG_NAMES secret: Telegram first name -> name on the Kindle, e.g. {"Alex":"Papa"}. */
+function displayNames(env) {
+  try { return JSON.parse(env.TG_NAMES || "{}"); } catch { return {}; }
+}
+
 /** Adds the group messages among the updates to data.messages. Returns how many it added. */
 function applyUpdates(env, data, updates) {
   let n = 0;
+  const names = displayNames(env);
+  for (const m of data.messages || []) if (!m.me && names[m.from]) m.from = names[m.from]; // messages from before a rename
   for (const u of updates) {
     data.tg_offset = Math.max(data.tg_offset || 0, u.update_id + 1);
     const m = u.message;
@@ -252,7 +260,8 @@ function applyUpdates(env, data, updates) {
     if (t.startsWith("/")) continue;
     t = t.replace(/\s+/g, " ").replace(GLYPHS_OK, "").trim();
     if (!t) t = m.photo ? "[Foto]" : m.sticker ? "[Sticker]" : m.voice ? "[Sprachnachricht]" : "[Emoji]";
-    addMessage(data, { from: String(m.from.first_name || "").slice(0, 30), text: t.slice(0, 300), at: m.date, me: 0 });
+    const first = String(m.from.first_name || "");
+    addMessage(data, { from: String(names[first] || first).slice(0, 30), text: t.slice(0, 300), at: m.date, me: 0 });
     n++;
   }
   return n;
@@ -295,6 +304,9 @@ function applyAction(action, st, data, now, fl = 12) {
     case "space": if (s.s && !s.s.endsWith(" ") && s.s.length < max) s.s += " "; break;
     case "back": s.s = [...s.s].slice(0, -1).join(""); if (!s.s) s.sh = 1; break;
     case "shift": s.sh = s.sh ? 0 : 1; break;
+    case "kb": s.k = s.k ? 0 : 1; break;
+    case "up": s.o = Math.min(MSG_KEEP - 1, (s.o | 0) + 1); break;
+    case "down": s.o = Math.max(0, (s.o | 0) - 1); break;
     case "type": s.t = rest === "h" ? "h" : "e"; if (s.t === "h" && s.r === "once") s.r = "daily"; break;
     case "rep": s.r = rest; if (rest === "days" && !s.w) s.w = 1 << weekday(now.date); break;
     case "day": s.d = Math.min(6, Math.max(0, +rest | 0)); break;
@@ -587,7 +599,7 @@ export default {
       if (res.write) await save(env, data);
       if (res.send) {
         const ok = await sendTelegram(env, `${data.child_name || "Kindle"}: ${res.send}`);
-        res.st = ok ? { ...res.st, s: "", sh: 1, f: 1 } : { ...res.st, f: 2 };
+        res.st = ok ? { ...res.st, s: "", sh: 1, f: 1, o: 0 } : { ...res.st, f: 2 };
         if (ok) {
           addMessage(data, { from: data.child_name || "Ich", text: res.send, at: Math.floor(Date.now() / 1000), me: 1 });
           data.msg_seen = Math.floor(Date.now() / 1000);

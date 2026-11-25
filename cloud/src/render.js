@@ -468,7 +468,7 @@ const KB = [
   ["-", "?", "!", ["space", 5], ".", ",", ":"],
 ];
 
-/** Compose state: t=e(vent)|h(abit)|m(essage), s=text, f=1 sent / 2 send failed (message only), r=once|daily|days, d=day offset, w=weekday bitmask,
+/** Compose state: t=e(vent)|h(abit)|m(essage), s=text, f=1 sent / 2 send failed, k=1 keyboard hidden, o=scroll (message only), r=once|daily|days, d=day offset, w=weekday bitmask,
  *  tm=minutes or -1, p=period, sh=shift */
 export function composeDefaults(now) {
   return { m: "c", t: "e", s: "", r: "once", d: 0, w: 1 << weekday(now.date), tm: -1, p: periodIndex(now), sh: 1 };
@@ -502,25 +502,42 @@ function wrap(text, maxW, size) {
   return lines;
 }
 
+function keyboardIcon(g, cx, cy, fg, bg) {
+  g.box([cx - 32, cy - 21, cx + 32, cy + 21], 6, { fill: bg, outline: fg, width: 4 });
+  for (let r = 0; r < 2; r++) for (let k = 0; k < 5; k++) {
+    const x = cx - 22 + k * 10, y = cy - 12 + r * 10;
+    g.rect(x, y, x + 6, y + 6, fg);
+  }
+  g.rect(cx - 14, cy + 9, cx + 14, cy + 14, fg);
+}
+function arrowButton(g, box, up) {
+  g.box(box, 20, { fill: 255, outline: 0, width: 4 });
+  const cx = (box[0] + box[2]) / 2, cy = (box[1] + box[3]) / 2, d = up ? -1 : 1;
+  g.polyline([[cx - 18, cy - 9 * d], [cx, cy + 9 * d], [cx + 18, cy - 9 * d]], 7, 0);
+}
+
+/** Chat page. st.k = 1 hides the keyboard (more history), st.o = messages scrolled back from the newest. */
 function renderMessage(data, st) {
   const c = new Canvas();
   const g = c.g;
+  const kb = !st.k;
   g.text(40, 24, "Nachrichten", 56, true);
-  g.text(W - 40, 44, "Familie", 32, false, 70, "ra");
 
   // history, newest at the bottom; own messages right and gray, replies left and white
-  const top = 110, bottom = 476, ts = 32, tlh = 40, bw = 760;
+  const top = 110, bottom = kb ? 476 : 1070, ts = 32, tlh = 40, bw = 760, ax = W - 24 - 90;
   let y = bottom;
   const msgs = recentMessages(data);
+  const o = Math.min(st.o || 0, Math.max(0, msgs.length - 1));
   if (!msgs.length) g.text(W / 2, (top + bottom) / 2, "Noch keine Nachrichten", 34, false, 150, "mm");
-  for (let i = msgs.length - 1; i >= 0 && y > top + 60; i--) {
+  let i = msgs.length - 1 - o;
+  for (; i >= 0 && y > top + 60; i--) {
     const m = msgs[i];
     let lines = wrap(m.text, bw - 40, ts);
     const room = Math.floor((y - top - 50) / tlh);
     if (room < 2) break;
     if (lines.length > room) lines = ["…", ...lines.slice(-(room - 1))];
     const h = 44 + lines.length * tlh + 10, w = Math.max(...lines.map((l) => textWidth(l, ts, true)), textWidth(m.from, 24, false)) + 40;
-    const x0 = m.me ? W - 24 - w : 24;
+    const x0 = m.me ? ax - 20 - w : 24;
     y -= h;
     g.box([x0, y, x0 + w, y + h - 8], 18, m.me ? { fill: 225 } : { fill: 255, outline: 0, width: 3 });
     g.text(x0 + 20, y + 8, m.from, 24, false, 90);
@@ -528,8 +545,10 @@ function renderMessage(data, st) {
     y -= 6;
   }
   g.rect(0, top - 10, W, top, 255); // a cut-off bubble must not reach the title
+  if (i >= 0) { arrowButton(g, [ax, top, W - 24, top + 90], true); c.zone([ax - 20, top - 10, W, top + 110], "up"); }
+  if (o > 0) { arrowButton(g, [ax, bottom - 90, W - 24, bottom], false); c.zone([ax - 20, bottom - 110, W, bottom + 5], "down"); }
 
-  const fb = [24, 486, W - 24, 626], size = 36, lh = 48, maxW = fb[2] - fb[0] - 80;
+  const fy = kb ? 486 : 1140, fb = [24, fy, W - 24 - 136, fy + 140], size = 36, lh = 48, maxW = fb[2] - fb[0] - 80;
   g.box(fb, 24, { fill: 255, outline: 0, width: 5 });
   if (st.s) {
     const lines = wrap(st.s, maxW, size).slice(-Math.floor((fb[3] - fb[1] - 30) / lh));
@@ -542,8 +561,13 @@ function renderMessage(data, st) {
     g.rect(fb[0] + 30, ly - 20, fb[0] + 35, ly + 20, 0);
     g.text(fb[0] + 52, ly, st.f === 1 ? "Gesendet! Schreib noch eine?" : "Was möchtest du sagen?", 38, false, 150, "lm");
   }
-  if (st.f === 2) g.text(40, 1240, "Nicht gesendet. Bitte nochmal versuchen.", 34, true, 0, "lm");
-  drawKeyboard(c, st, 644);
+  if (!kb) c.zone(fb, "kb"); // tap the text field to bring the keyboard back
+  const kbb = [W - 24 - 120, fy, W - 24, fy + 140]; // keyboard on/off next to the text field; black = shown
+  g.box(kbb, 24, kb ? { fill: 0 } : { fill: 255, outline: 0, width: 5 });
+  keyboardIcon(g, (kbb[0] + kbb[2]) / 2, (kbb[1] + kbb[3]) / 2, kb ? 255 : 0, kb ? 0 : 255);
+  c.zone([kbb[0] - 8, kbb[1] - 8, kbb[2] + 8, kbb[3] + 8], "kb");
+  if (st.f === 2) g.text(40, kb ? 1240 : 1105, "Nicht gesendet. Bitte nochmal versuchen.", 34, true, 0, "lm");
+  if (kb) drawKeyboard(c, st, 644);
   const by0 = 1300, by1 = 1420;
   pill(g, [24, by0, 520, by1], "Fertig", 44, false);
   c.zone([24, by0 - 10, 520, H], "cancel");
