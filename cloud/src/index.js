@@ -281,14 +281,41 @@ function readWifi(url) {
 // Kept in its own KV key so the minute poll never rewrites the main data.
 const SEEN_KEY = "seen";
 const SEEN_EVERY = 600; // shortcut: "last seen" is up to 10 min old, to stay under the free plan's 1000 KV writes a day
+/** Nearby routers from the Kindle: "<12 hex><dBm>" joined by "_". */
+function readAps(url) {
+  return [...(url.searchParams.get("ap") || "").slice(0, 400).matchAll(/([0-9a-f]{12})(-\d{1,3})/gi)]
+    .map(([, mac, dbm]) => ({ macAddress: mac.toLowerCase().match(/../g).join(":"), signalStrength: +dbm }));
+}
+
+/** Street-level position from the routers (BeaconDB, free, no key), or null. */
+async function wifiFix(aps) {
+  if (aps.length < 2) return null; // the lookup needs two routers at least
+  try {
+    const r = await fetch("https://api.beacondb.net/v1/geolocate", {
+      method: "POST", headers: { "Content-Type": "application/json", "User-Agent": "kindle-wall-display/1.0" }, // BeaconDB asks clients to name themselves
+      body: JSON.stringify({ considerIp: false, wifiAccessPoints: aps }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    if (j.fallback) return null; // a guess from the IP address, not from the routers
+    const lat = +j.location?.lat, lon = +j.location?.lng;
+    return Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon, acc: Math.round(+j.accuracy) || null } : null;
+  } catch {
+    return null;
+  }
+}
+
 async function noteSeen(env, request, url, bat) {
   const cf = request.cf || {}, { ssid, sig } = readWifi(url), at = Math.floor(Date.now() / 1000);
   const old = await env.KV.get(SEEN_KEY, "json");
   if (old && at - old.at < SEEN_EVERY && old.ssid === ssid && old.city === (cf.city || "")) return;
   const lat = +cf.latitude, lon = +cf.longitude;
+  const ip = { lat: Number.isFinite(lat) ? lat : null, lon: Number.isFinite(lon) ? lon : null, acc: null };
+  const fix = await wifiFix(readAps(url));
   await env.KV.put(SEEN_KEY, JSON.stringify({
     at, ssid, sig, bat, city: cf.city || "", region: cf.region || "", country: cf.country || "",
-    lat: Number.isFinite(lat) ? lat : null, lon: Number.isFinite(lon) ? lon : null,
+    ...(fix || ip), src: fix ? "wifi" : "ip",
   }));
 }
 

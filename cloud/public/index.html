@@ -178,7 +178,7 @@ details.table td,details.table th{padding:4px 6px;border-bottom:1px solid rgba(2
 .ktabs button.on{background:#fff;color:var(--ink)}
 .kseen{margin:14px 0 18px;font-size:16px;line-height:1.5}
 .kseen .warn{color:var(--yellow)}
-.kseen iframe{display:block;width:100%;max-width:480px;height:240px;border:1.5px solid #fff;border-radius:18px;margin-top:10px}
+.kseen iframe{display:block;width:100%;height:260px;border:1.5px solid #fff;border-radius:18px;margin-top:10px}
 .kseen a{color:#fff}
 .kset label{display:block;margin:18px 0 6px;font-size:15px;opacity:.85}
 .kset input{width:100%;max-width:360px;padding:10px 14px;border-radius:999px;border:1.5px solid #fff;background:transparent;color:#fff}
@@ -319,12 +319,12 @@ footer{padding:30px 0 50px;color:var(--muted);font-size:14px}
         <button data-v="day" class="on" data-i18n="k.day">Day</button><button data-v="week" data-i18n="k.week">Week</button><button data-v="month" data-i18n="k.month">Month</button><button data-v="lock" data-i18n="k.lock">Lock</button><button data-v="compose" data-i18n="k.add">Add</button>
       </div>
       <div class="kframe"><img id="kprev" data-i18n-alt="k.preview" alt="Preview of the Kindle display"></div>
+      <div class="kseen"><div id="k-seen"></div><div id="k-map"></div></div>
     </div>
     <div class="kset">
       <p class="kicker" data-i18n="k.kicker">Device</p>
       <h2 data-i18n="k.title">Kindle display</h2>
       <p id="k-state" style="font-size:20px"></p>
-      <div class="kseen"><div id="k-seen"></div><div id="k-map"></div></div>
       <div class="r">
         <button class="btn" id="k-stop" data-i18n="k.stop">Return to normal Kindle</button>
         <button class="btn primary" id="k-run" data-i18n="k.run">Show display</button>
@@ -386,7 +386,7 @@ const I18N = {
     "k.name": "Child name (title on the Kindle)", "k.lockName": "Name on the lock screen", "k.lockPh": "e.g. first and last name",
     "k.save": "Save names", "k.help": "Press the Kindle's power button to lock it: the light turns off and the lock screen shows the clock and the name. Press again to unlock.",
     "k.never": "The Kindle has not checked in yet.", "k.seen": "Last seen", "k.offline": "(no contact for a while: WLAN off, asleep, or out of battery?)",
-    "k.wifi": "WLAN", "k.battery": "Battery", "k.near": "Near", "k.mapNote": "Place from the internet address, so it is only accurate to the city.",
+    "k.wifi": "WLAN", "k.battery": "Battery", "k.near": "Near", "k.mapNote": "Place from the internet address, so it is only accurate to the city.", "k.mapWifi": (m) => `Place from the nearby WLAN routers, accurate to about ${m} m.`,
     "k.mapTitle": "Map of the Kindle's approximate place", "k.bigMap": "Open larger map",
     "k.stateStop": "The Kindle is in normal reader mode.", "k.stateRun": "The Kindle shows the planner display.",
     footer: "Kid Planner · Kindle display + web dashboard", signedIn: "signed in as", signOut: "Sign out",
@@ -432,7 +432,7 @@ const I18N = {
     "k.name": "Name des Kindes (Titel auf dem Kindle)", "k.lockName": "Name auf dem Sperrbildschirm", "k.lockPh": "z. B. Vor- und Nachname",
     "k.save": "Namen speichern", "k.help": "Drücke den Ein-/Aus-Knopf des Kindle, um ihn zu sperren: Das Licht geht aus und der Sperrbildschirm zeigt Uhr und Namen. Erneut drücken zum Entsperren.",
     "k.never": "Der Kindle hat sich noch nicht gemeldet.", "k.seen": "Zuletzt gesehen", "k.offline": "(länger kein Kontakt: WLAN aus, Ruhemodus oder Akku leer?)",
-    "k.wifi": "WLAN", "k.battery": "Akku", "k.near": "In der Nähe von", "k.mapNote": "Ort aus der Internetadresse, also nur auf die Stadt genau.",
+    "k.wifi": "WLAN", "k.battery": "Akku", "k.near": "In der Nähe von", "k.mapNote": "Ort aus der Internetadresse, also nur auf die Stadt genau.", "k.mapWifi": (m) => `Ort aus den WLAN-Routern in der Nähe, auf etwa ${m} m genau.`,
     "k.mapTitle": "Karte mit dem ungefähren Ort des Kindle", "k.bigMap": "Größere Karte öffnen",
     "k.stateStop": "Der Kindle ist im normalen Lesemodus.", "k.stateRun": "Der Kindle zeigt den Planer.",
     footer: "Kinderplaner · Kindle-Anzeige + Web-Dashboard", signedIn: "angemeldet als", signOut: "Abmelden",
@@ -888,16 +888,17 @@ function renderSeen() {
     place ? el("div", {}, `${t("k.near")}: ${place}`) : "",
   ];
   box.replaceChildren(...lines);
-  const key = s.lat != null && s.lon != null ? `${s.lat},${s.lon},${LANG}` : "";
+  const wifi = s.src === "wifi";
+  const key = s.lat != null && s.lon != null ? `${s.lat},${s.lon},${s.acc},${LANG}` : "";
   if (key === mapAt) return; // same place: keep the map, no reload every minute
   mapAt = key;
   $("k-map").replaceChildren();
   if (key) {
-    const d = 0.06, b = [s.lon - d, s.lat - d / 2, s.lon + d, s.lat + d / 2].join(",");
+    const d = wifi ? 0.006 : 0.06, b = [s.lon - d, s.lat - d / 2, s.lon + d, s.lat + d / 2].join(",");
     $("k-map").append(
       el("iframe", { title: t("k.mapTitle"), loading: "lazy", src: `https://www.openstreetmap.org/export/embed.html?bbox=${b}&layer=mapnik&marker=${s.lat},${s.lon}` }),
-      el("small", { style: "opacity:.8;display:block;margin-top:6px" }, t("k.mapNote")),
-      el("a", { href: `https://www.openstreetmap.org/?mlat=${s.lat}&mlon=${s.lon}#map=12/${s.lat}/${s.lon}`, target: "_blank", rel: "noopener" }, t("k.bigMap")));
+      el("small", { style: "opacity:.8;display:block;margin-top:6px" }, wifi ? t("k.mapWifi", s.acc || "?") : t("k.mapNote")),
+      el("a", { href: `https://www.openstreetmap.org/?mlat=${s.lat}&mlon=${s.lon}#map=${wifi ? 17 : 12}/${s.lat}/${s.lon}`, target: "_blank", rel: "noopener" }, t("k.bigMap")));
   }
 }
 function refreshPreview() { $("kprev").src = "/page.png?view=" + pv + "&t=" + Date.now(); }

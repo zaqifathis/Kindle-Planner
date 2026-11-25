@@ -24,7 +24,7 @@ On the web dashboard:
 - Edit habits, events, and the configuration.
 - Statistics per habit and per time of day.
 - Start or stop the Kindle display remotely.
-- See when the Kindle last checked in, its WLAN name, battery, and approximate place on a map, in the dashboard's Kindle tab. The screen does not show it. The place comes from Cloudflare's IP geolocation, so it is accurate only to the city. The record updates at most every 10 minutes, or at once when the WLAN or city changes.
+- See when the Kindle last checked in, its WLAN name, battery, and approximate place on a map, in the dashboard's Kindle tab. The screen does not show it. The Kindle scans the nearby WLAN routers, and the Worker sends that list to BeaconDB (a free, open WLAN location database, no account) for a street-level place. When BeaconDB does not know the routers, the place comes from Cloudflare's IP geolocation and is accurate only to the city. The record updates at most every 10 minutes, or at once when the WLAN or city changes.
 
 ## Architecture
 

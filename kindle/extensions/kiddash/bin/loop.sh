@@ -61,6 +61,15 @@ wifi_q() {
   WQ=$(lipc-get-prop com.lab126.wifid signalStrength 2>/dev/null | tr -dc '0-9/')
   printf 'ws=%s&wq=%s' "$WS" "$WQ"
 }
+# Nearby routers as "<bssid hex><signal dBm>" joined by "_", strongest 12, for the dashboard's map.
+# $1 = poll count: a new scan starts every 10th poll, and the next poll reads its results.
+# Networks named *_nomap asked not to be mapped, so they are left out.
+wifi_aps() {
+  [ $(($1 % 10)) -eq 0 ] && wpa_cli scan >/dev/null 2>&1
+  wpa_cli scan_results 2>/dev/null \
+    | awk 'length($1) == 17 && $1 ~ /:/ && $0 !~ /_nomap/ { gsub(":", "", $1); print $3, $1 }' \
+    | sort -n -r | head -12 | awk '{ printf "%s%s%s", (NR > 1 ? "_" : ""), $2, $1 }'
+}
 # Turn WLAN off and on, then wait up to 40 s for the connection.
 wifi_reconnect() {
   eips 1 58 "WLAN wird neu verbunden ...  " >/dev/null 2>&1
@@ -82,7 +91,7 @@ show() {
     S=$(cat "$STATE" 2>/dev/null)
     L=0; [ -f "$LOCKED" ] && L=1
     rm -f "$IMG" "$HDR"
-    if $CURL -m 20 -D "$HDR" -o "$IMG" "$SERVER/dashboard.png?bat=$BAT&lock=$L&s=$S&fl=$(cur_light)&$(wifi_q)" \
+    if $CURL -m 20 -D "$HDR" -o "$IMG" "$SERVER/dashboard.png?bat=$BAT&lock=$L&s=$S&fl=$(cur_light)&$(wifi_q)&ap=$(wifi_aps "$n")" \
        && grep -q " 200" "$HDR" && [ -s "$IMG" ]; then
       if [ "$1" = "full" ] || [ $((n % FULL_EVERY)) -eq 0 ]; then
         eips -f -g "$IMG" >/dev/null 2>&1
