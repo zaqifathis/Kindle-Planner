@@ -138,7 +138,7 @@ function decodeState(s, now) {
   try {
     const raw = atob(s.replace(/-/g, "+").replace(/_/g, "/"));
     const st = JSON.parse(new TextDecoder().decode(Uint8Array.from(raw, (c) => c.charCodeAt(0))));
-    if (st.m === "l") return { m: "l" };
+    if (st.m === "l") return { m: "l", tab: st.tab === "w" ? "w" : "l" }; // settings tab: l(ight) | w(lan)
     if (st.m !== "c") {
       const v = String(st.v || "day");
       return { m: "h", v: /^(day|week|month)(:\d{4}-\d{2}-\d{2})?(@[0-2]\.[0-2])?$/.test(v) ? v : "day" };
@@ -178,12 +178,12 @@ function body(data, view, now) {
   return b;
 }
 
-function renderPage(kind, data, st, { now, loc, wx, battery, fl }) {
-  if (kind === "light") return assemblePNG(W, H, [encodeRows(renderLight(fl).g, 0, H, true)]);
-  if (kind === "lock") return assemblePNG(W, H, [encodeRows(renderLock(data, now, loc, wx).g, 0, H, true)]);
+function renderPage(kind, data, st, { now, loc, wx, battery, fl, wifi }) {
+  if (kind === "light") return assemblePNG(W, H, [encodeRows(renderLight(fl, wifi, st.tab).g, 0, H, true)]);
+  if (kind === "lock") return assemblePNG(W, H, [encodeRows(renderLock(data, now, loc, wx, battery).g, 0, H, true)]);
   if (kind === "compose") return assemblePNG(W, H, [encodeRows(renderCompose(data, st, now).g, 0, H, true)]);
   const b = body(data, st.v || "day", now);
-  drawHeader(b.img, data, now, loc, wx, battery);
+  drawHeader(b.img, now);
   return assemblePNG(W, H, [encodeRows(b.img, 0, SPLIT, false), b.piece]);
 }
 
@@ -269,6 +269,13 @@ function applyUpdates(env, data, updates) {
 
 const clampFl = (v) => Math.max(0, Math.min(FL_MAX, Math.round(v)));
 const readFl = (url) => { const v = url.searchParams.get("fl"); return v !== null && /^\d+$/.test(v) ? clampFl(+v) : 12; };
+/** WLAN name (hex, so any byte survives the URL) and signal text from the Kindle. */
+function readWifi(url) {
+  const hex = (url.searchParams.get("ws") || "").replace(/[^0-9a-f]/gi, "").slice(0, 64);
+  let ssid = "";
+  try { ssid = new TextDecoder().decode(Uint8Array.from(hex.match(/../g) || [], (h) => parseInt(h, 16))); } catch { /* keep empty */ }
+  return { ssid, sig: (url.searchParams.get("wq") || "").replace(/[^0-9/]/g, "").slice(0, 7) };
+}
 
 function applyAction(action, st, data, now, fl = 12) {
   if (!action) return { st, write: false };
@@ -278,6 +285,8 @@ function applyAction(action, st, data, now, fl = 12) {
     if (kind === "fl") return { st, write: false, fl: clampFl(+rest || 0) };
     if (kind === "flstep") return { st, write: false, fl: clampFl(fl + (+rest || 0)) };
     if (kind === "done") return { st: { m: "h", v: "day" }, write: false };
+    if (kind === "stab") return { st: { m: "l", tab: rest === "w" ? "w" : "l" }, write: false };
+    if (kind === "wifi") return { st, write: false, wifi: true }; // the Kindle reconnects by itself (X-Kindle-Wifi)
     return { st, write: false };
   }
   if (st.m !== "c") {
@@ -312,10 +321,15 @@ function applyAction(action, st, data, now, fl = 12) {
     case "day": s.d = Math.min(6, Math.max(0, +rest | 0)); break;
     case "wd": s.w ^= 1 << (+rest | 0); break;
     case "allday": s.tm = -1; break;
-    case "tminus": case "tplus":
-      if (s.tm < 0) s.tm = Math.min(23, now.hour + 1) * 60;
-      else s.tm = Math.min(23 * 60 + 30, Math.max(0, s.tm + (kind === "tplus" ? 30 : -30)));
+    case "hminus": case "hplus": case "mminus": case "mplus": {
+      if (s.tm < 0) { s.tm = Math.min(23, now.hour + 1) * 60; break; } // first tap picks the next full hour
+      let h = Math.floor(s.tm / 60), m = s.tm % 60;
+      const d = kind.endsWith("plus") ? 1 : -1;
+      if (kind[0] === "h") h = (h + d + 24) % 24;
+      else m = (m - (m % 15) + d * 15 + 60) % 60;
+      s.tm = h * 60 + m;
       break;
+    }
     case "period": s.p = Math.min(2, Math.max(0, +rest | 0)); break;
     case "cancel": return { st: { m: "h", v: "day" }, write: false };
     case "save": {
@@ -584,7 +598,7 @@ export default {
           : { m: "h", v: ["day", "week", "month"].includes(v) ? v : "day" };
       }
       if (changed) ctx.waitUntil(save(env, data));
-      const bytes = renderPage(kind, data, st, { now, loc, wx, battery: bat, fl: readFl(url) });
+      const bytes = renderPage(kind, data, st, { now, loc, wx, battery: bat, fl: readFl(url), wifi: readWifi(url) });
       return png(bytes, fromKindle ? { "X-Kindle-Command": data.kindle_command || "run" } : {});
     }
 
@@ -594,7 +608,7 @@ export default {
       const st = decodeState(url.searchParams.get("s"), now);
       const fl = readFl(url);
       const zones = st.m === "c" ? renderCompose(data, st, now).zones
-        : st.m === "l" ? renderLight(fl).zones : body(data, st.v || "day", now).zones;
+        : st.m === "l" ? renderLight(fl, {}, st.tab).zones : body(data, st.v || "day", now).zones;
       const res = applyAction(hit(zones, x, y), st, data, now, fl);
       if (res.write) await save(env, data);
       if (res.send) {
@@ -608,6 +622,8 @@ export default {
       }
       const r = text(encodeState(res.st));
       if (res.fl !== undefined) r.headers.set("X-Kindle-Light", String(res.fl));
+      if (res.wifi) r.headers.set("X-Kindle-Wifi", "reconnect");
+      if (res.st.m === "c" && res.st.s) r.headers.set("X-Kindle-Draft", "1"); // the Kindle waits longer before it drops a draft
       return r;
     }
 

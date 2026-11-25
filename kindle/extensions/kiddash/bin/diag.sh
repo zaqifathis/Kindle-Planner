@@ -11,6 +11,9 @@ OUT=/mnt/us/kiddash_diag.txt
   done
   echo "== busybox"; busybox --list 2>&1 | tr '\n' ' '; echo
   echo "== screen"; eips -i 2>&1 | head -30
+  echo "== wifi"; for k in cmState currentEssid signalStrength; do printf "%s: " "$k"; lipc-get-prop com.lab126.wifid "$k" 2>&1; done
+  echo "== wpa_cli"; wpa_cli status 2>&1 | head -15
+  echo "== iwconfig"; iwconfig 2>&1 | head -15
 } > "$OUT" 2>&1
 
 lipc-set-prop com.lab126.powerd preventScreenSaver 1

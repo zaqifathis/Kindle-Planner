@@ -17,7 +17,7 @@ const now = R.localNow("Europe/Berlin");
 const loc = { city: "Dresden" }, wx = { temp: 5.6, text: "Bewölkt", hi: 6, lo: 3 };
 const pages = {
   home: () => { const c = R.renderHomeBody(data, now); const piece = P.encodeRows(c.g, R.SPLIT, R.H, true);
-    R.drawHeader(c.g, data, now, loc, wx, "43"); return P.assemblePNG(R.W, R.H, [P.encodeRows(c.g, 0, R.SPLIT, false), piece]); },
+    R.drawHeader(c.g, now); return P.assemblePNG(R.W, R.H, [P.encodeRows(c.g, 0, R.SPLIT, false), piece]); },
   lock: () => P.assemblePNG(R.W, R.H, [P.encodeRows(R.renderLock(data, now, loc, wx, "43").g, 0, R.H, true)]),
   compose: () => P.assemblePNG(R.W, R.H, [P.encodeRows(R.renderCompose(data, { ...R.composeDefaults(now), s: "Schwimmen", tm: 930, sh: 0 }, now, "43").g, 0, R.H, true)]),
   composeH: () => P.assemblePNG(R.W, R.H, [P.encodeRows(R.renderCompose(data, { ...R.composeDefaults(now), t: "h", s: "", sh: 1 }, now, "43").g, 0, R.H, true)]),

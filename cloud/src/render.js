@@ -8,8 +8,10 @@ const DAY_LONG = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Sa
 export const DAY_SHORT = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August",
   "September", "Oktober", "November", "Dezember"];
-export const SPLIT = 256; // rows above change every minute (clock, weather)
+export const SPLIT = 112; // rows above change every minute (time and date text)
 export const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
+// Gray levels (0 = black ink, 255 = paper). Text uses SUB or MUTED only, both >= 5:1 on white.
+const SUB = 80, MUTED = 110, FAINT = 170, FILL = 225;
 
 // ------------------------------------------------------------ dates (UTC math)
 export function parseDate(s) {
@@ -154,22 +156,18 @@ class Canvas {
 }
 
 // ------------------------------------------------------------ header (every minute)
-const HEADER_H = 250, TABS_Y0 = 262, TABS_Y1 = 336, CONTENT_Y = 356;
+// One row: time and date as text on the left, message / add / settings buttons on the right.
+// Only the text part changes every minute; the buttons are drawn with the cached body.
+const BTN_Y0 = 22, BTN_Y1 = 102, BTN_W = 112, BTN_GAP = 16, TEXT_R = W - 30 - 3 * BTN_W - 2 * BTN_GAP - 20;
+const TABS_Y0 = 126, TABS_Y1 = 200, CONTENT_Y = 224;
 
-export function drawHeader(g, data, now, loc, wx, battery) {
-  g.rect(0, 0, W, SPLIT, 255);
-  drawClock(g, 125, 125, 112, now.hour, now.minute);
-  g.text(268, 26, DAY_LONG[weekday(now.date)], 62, true);
-  g.text(268, 104, `${now.date.getUTCDate()}. ${MONTHS[now.date.getUTCMonth()]}`, 42, false);
-  let info = loc.city || "";
-  info += (info ? "  ·  " : "") + `${pad2(now.hour)}:${pad2(now.minute)}` + (battery ? `  ·  ${battery} %` : "");
-  g.text(268, 166, info, 26, false, 90);
-  if (wx) {
-    g.text(W - 40, -12, `${Math.round(wx.temp)}°`, 140, true, 0, "ra");
-    g.text(W - 44, 165, wx.text, fit(wx.text, 330, 34, true), true, 0, "ra");
-    g.text(W - 44, 207, `${Math.round(wx.lo)}° bis ${Math.round(wx.hi)}°`, 28, false, 0, "ra");
-  }
-  g.rect(30, HEADER_H - 2, W - 30, HEADER_H + 2, 0);
+export function drawHeader(g, now) {
+  g.rect(0, 0, TEXT_R, SPLIT, 255);
+  const cy = (BTN_Y0 + BTN_Y1) / 2;
+  const tw = g.text(30, cy, `${pad2(now.hour)}:${pad2(now.minute)}`, 72, true, 0, "lm");
+  const d = now.date, date = `${DAY_LONG[weekday(d)]}, ${pad2(d.getUTCDate())}.${pad2(d.getUTCMonth() + 1)}.${d.getUTCFullYear()}`;
+  const x = 30 + tw + 28;
+  g.text(x, cy + 2, date, fit(date, TEXT_R - x, 38, false), false, 0, "lm");
 }
 
 // ------------------------------------------------------------ home body
@@ -177,34 +175,39 @@ function envelope(g, mx, my, fg, bg) {
   g.box([mx - 30, my - 20, mx + 30, my + 20], 4, { fill: bg, outline: fg, width: 5 });
   g.polyline([[mx - 28, my - 17], [mx, my + 4], [mx + 28, my - 17]], 5, fg);
 }
+function gear(g, cx, cy, r, fg, bg) {
+  for (let k = 0; k < 8; k++) {
+    const a = (k * 45 * Math.PI) / 180;
+    g.line(cx + r * 0.55 * Math.cos(a), cy + r * 0.55 * Math.sin(a), cx + r * Math.cos(a), cy + r * Math.sin(a), r * 0.38, fg, false);
+  }
+  g.disc(cx, cy, r * 0.74, fg);
+  g.disc(cx, cy, r * 0.32, bg);
+}
 
 function drawTabs(c, active, news) {
-  const g = c.g, gap = 16, x0 = 30, plusW = 110;
-  const tw = Math.floor((W - 2 * x0 - 3 * plusW - 5 * gap) / 3);
+  const g = c.g, x0 = 30;
+  // header buttons: message (black = unread reply), add, settings
+  const btn = (i, fill, action, icon) => {
+    const bx = W - x0 - (3 - i) * BTN_W - (2 - i) * BTN_GAP, box = [bx, BTN_Y0, bx + BTN_W, BTN_Y1];
+    g.box(box, 36, fill ? { fill: 0 } : { fill: 255, outline: 0, width: 5 });
+    icon((box[0] + box[2]) / 2, (box[1] + box[3]) / 2, fill ? 255 : 0, fill ? 0 : 255);
+    c.zone([box[0] - BTN_GAP / 2, 0, box[2] + BTN_GAP / 2, BTN_Y1 + 10], action);
+  };
+  btn(0, news, "message", (cx, cy, fg, bg) => envelope(g, cx, cy, fg, bg));
+  btn(1, true, "compose", (cx, cy, fg) => {
+    g.line(cx - 22, cy, cx + 22, cy, 9, fg, true);
+    g.line(cx, cy - 22, cx, cy + 22, 9, fg, true);
+  });
+  btn(2, false, "light", (cx, cy, fg, bg) => gear(g, cx, cy, 28, fg, bg)); // "light" opens the settings page
+  g.rect(x0, BTN_Y1 + 10, W - x0, BTN_Y1 + 13, 0);
+
+  const gap = 16, tw = (W - 2 * x0 - 2 * gap) / 3;
   [["day", "Tag"], ["week", "Woche"], ["month", "Monat"]].forEach(([key, label], i) => {
     const bx = x0 + i * (tw + gap), box = [bx, TABS_Y0, bx + tw, TABS_Y1], on = key === active;
     g.box(box, 36, on ? { fill: 0 } : { fill: 255, outline: 0, width: 5 });
-    g.text((box[0] + box[2]) / 2, (TABS_Y0 + TABS_Y1) / 2, label, 40, true, on ? 255 : 0, "mm");
-    c.zone(box, `view:${key}`);
+    g.text((box[0] + box[2]) / 2, (box[1] + box[3]) / 2, label, 40, true, on ? 255 : 0, "mm");
+    c.zone([box[0] - gap / 2, box[1] - 8, box[2] + gap / 2, box[3] + 8], `view:${key}`);
   });
-  // message button (envelope)
-  const mb = [W - x0 - 3 * plusW - 2 * gap, TABS_Y0, W - x0 - 2 * plusW - 2 * gap, TABS_Y1];
-  // black = unread reply
-  g.box(mb, 36, news ? { fill: 0 } : { fill: 255, outline: 0, width: 5 });
-  envelope(g, (mb[0] + mb[2]) / 2, (mb[1] + mb[3]) / 2, news ? 255 : 0, news ? 0 : 255);
-  c.zone([mb[0] - gap / 2, mb[1] - 10, mb[2] + gap / 2, mb[3] + 10], "message");
-  // light button
-  const lb = [W - x0 - 2 * plusW - gap, TABS_Y0, W - x0 - plusW - gap, TABS_Y1];
-  g.box(lb, 36, { fill: 255, outline: 0, width: 5 });
-  iconBulb(g, (lb[0] + lb[2]) / 2, (lb[1] + lb[3]) / 2, 30, 0, 255);
-  c.zone([lb[0], lb[1] - 10, lb[2] + gap / 2, lb[3] + 10], "light");
-  // add button
-  const pb = [W - x0 - plusW, TABS_Y0, W - x0, TABS_Y1];
-  g.box(pb, 36, { fill: 0 });
-  const cx = (pb[0] + pb[2]) / 2, cy = (pb[1] + pb[3]) / 2;
-  g.line(cx - 22, cy, cx + 22, cy, 9, 255, true);
-  g.line(cx, cy - 22, cx, cy + 22, 9, 255, true);
-  c.zone([pb[0] - 8, pb[1] - 10, pb[2], pb[3] + 10], "compose");
 }
 
 function renderDay(c, data, day, now, base = "day", openPick = null) {
@@ -245,7 +248,7 @@ function renderDay(c, data, day, now, base = "day", openPick = null) {
   const bottom = H - 70, headH = 74;
   const nOpen = r[PERIODS[open][0]].length;
   const avail = bottom - y - 3 * (headH + 8) - 18;
-  const rowH = Math.max(48, Math.min(92, Math.floor(avail / Math.max(nOpen, 1))));
+  const rowH = Math.max(76, Math.min(92, Math.floor(avail / Math.max(nOpen, 1)))); // 76 px = 6.4 mm, a child's fingertip
   const fitRows = Math.max(1, Math.floor(avail / rowH));
 
   PERIODS.forEach(([p, label], pi) => {
@@ -270,34 +273,46 @@ function renderDay(c, data, day, now, base = "day", openPick = null) {
     y += headH + 8;
     if (!on) return;
     if (!items.length) {
-      g.text(60, y + 30, "Nichts geplant", 32, false, 110, "lm");
+      g.text(60, y + 30, "Nichts geplant", 32, false, MUTED, "lm");
       y += 66;
       return;
     }
     const box = Math.floor(rowH * 0.62);
-    const shown = items.length > fitRows ? items.slice(0, fitRows - 1) : items;
+    // too many rows: open tasks first, so the hidden ones are the finished ones
+    const shown = items.length > fitRows
+      ? [...items.filter((h) => !isDone(done, h)), ...items.filter((h) => isDone(done, h))].slice(0, fitRows - 1) : items;
     for (const h of shown) {
       const mid = y + rowH / 2, d = isDone(done, h);
       checkbox(g, 60, Math.round(mid - box / 2), box, d);
       const tx = 60 + box + 28;
       const fs = fit(h.title, W - tx - 50, Math.floor(rowH * 0.55), true);
-      const tw = g.text(tx, mid, h.title, fs, true, d ? 130 : 0, "lm");
-      if (d) g.rect(tx, mid - 2, tx + tw, mid + 2, 130);
+      const tw = g.text(tx, mid, h.title, fs, true, d ? MUTED : 0, "lm");
+      if (d) g.rect(tx, mid - 2, tx + tw, mid + 2, MUTED);
       c.zone([30, y, W - 30, y + rowH], `toggle:${iso(day)}:${h.id}`);
       y += rowH;
     }
     if (shown.length < items.length) {
-      g.text(60, y + rowH / 2, `+ ${items.length - shown.length} weitere (im Web-Dashboard)`, 30, false, 110, "lm");
+      g.text(60, y + rowH / 2, `+ ${items.length - shown.length} weitere (im Web-Dashboard)`, 30, false, MUTED, "lm");
       y += rowH;
     }
     y += 6;
   });
   const [nd, nt] = progress(data, day);
+  if (!nt && !evs.length) {
+    // nothing planned at all: point to the + button
+    g.text(W / 2, y + 120, "Noch nichts geplant.", 44, true, 0, "ma");
+    g.text(W / 2, y + 190, "Tippe hier oder oben rechts auf +.", 32, false, SUB, "ma");
+    c.zone([30, y + 80, W - 30, y + 260], "compose");
+  }
+  const fy = H - 40;
   if (nt && nd === nt) {
-    star(g, 70, H - 36, 26);
-    g.text(110, H - 36, "Alles geschafft! Super!", 34, true, 0, "lm");
+    star(g, 70, fy, 30);
+    g.text(112, fy, "Alles geschafft! Super!", 40, true, 0, "lm");
   } else if (nt) {
-    g.text(40, H - 36, `${nd} von ${nt} erledigt`, 30, false, 0, "lm");
+    const label = `${nd} von ${nt} erledigt`, bx = 70 + textWidth(label, 36, true);
+    g.text(40, fy, label, 36, true, 0, "lm");
+    g.box([bx, fy - 15, W - 40, fy + 15], 15, { fill: 255, outline: 0, width: 4 });
+    if (nd) g.box([bx, fy - 15, bx + Math.max(30, ((W - 40 - bx) * nd) / nt), fy + 15], 15, { fill: 0 });
   }
 }
 
@@ -318,13 +333,14 @@ function renderWeek(c, data, day, now) {
     const evs = eventsOn(data, dd);
     const ex = 210;
     let ey = y + 22;
-    if (!evs.length) g.text(ex, y + rowH / 2, "—", 32, false, 150, "lm");
-    for (const e of evs.slice(0, 2)) {
+    if (!evs.length) g.text(ex, y + rowH / 2, "—", 32, false, FAINT, "lm");
+    const nShow = evs.length > 2 ? 1 : evs.length; // two lines fit: 2 events, or 1 event + "weitere"
+    for (const e of evs.slice(0, nShow)) {
       const t = (e.time ? e.time + "  " : "") + e.title;
       g.text(ex, ey, clip(t, W - ex - 230, 32, true), 32, true);
       ey += 44;
     }
-    if (evs.length > 2) g.text(ex, ey, `+${evs.length - 2} weitere`, 24, false, 90);
+    if (evs.length > nShow) g.text(ex, ey + 2, `+ ${evs.length - nShow} weitere`, 28, false, SUB);
     const [nd, nt] = progress(data, dd);
     if (nt && dd <= now.date) {
       if (nd === nt) star(g, W - 100, y + rowH / 2, 38);
@@ -354,20 +370,20 @@ function renderMonth(c, data, day, now) {
   DAY_SHORT.forEach((n, i) => g.text(30 + i * cw + cw / 2, top, n, 28, true, 0, "ma"));
   top += 46;
   const weeks = monthGrid(day);
-  const ch = Math.min(170, Math.floor((H - 40 - top) / weeks.length));
+  const ch = Math.min(170, Math.floor((H - 70 - top) / weeks.length)); // 30 px kept for the legend
   weeks.forEach((week, wi) => week.forEach((dd, di) => {
     const x = 30 + di * cw, y = top + wi * ch, box = [x + 3, y + 3, x + cw - 3, y + ch - 3];
     const inMonth = dd.getUTCMonth() === day.getUTCMonth();
     const isToday = dd.getTime() === now.date.getTime();
     if (isToday) g.box(box, 12, { fill: 0 });
-    else g.box(box, 12, { fill: 255, outline: inMonth ? 0 : 190, width: 2 });
-    const fg = isToday ? 255 : inMonth ? 0 : 170;
+    else g.box(box, 12, { fill: 255, outline: inMonth ? 0 : FAINT, width: 2 });
+    const fg = isToday ? 255 : inMonth ? 0 : FAINT;
     g.text(x + 14, y + 8, String(dd.getUTCDate()), 36, true, fg);
     if (inMonth) {
-      let ey = y + 56;
-      for (const e of eventsOn(data, dd).slice(0, 2)) {
-        g.text(x + 12, ey, clip(e.title, cw - 22, 20, false), 20, false, fg);
-        ey += 26;
+      let ey = y + 54;
+      for (const e of eventsOn(data, dd).slice(0, ch >= 130 ? 2 : 1)) {
+        g.text(x + 12, ey, clip(e.title, cw - 22, 24, true), 24, true, fg);
+        ey += 34;
       }
       const [nd, nt] = progress(data, dd);
       if (nt && dd <= now.date) {
@@ -377,6 +393,13 @@ function renderMonth(c, data, day, now) {
       c.zone(box, `goto:${iso(dd)}`);
     }
   }));
+  const ly = top + weeks.length * ch + 34;
+  if (ly < H - 10) {
+    g.disc(46, ly, 8, 0);
+    g.text(64, ly, "etwas erledigt", 28, false, SUB, "lm");
+    star(g, 300, ly, 16);
+    g.text(324, ly, "alles erledigt", 28, false, SUB, "lm");
+  }
 }
 
 /** Everything below the header. view: "day" | "day:YYYY-MM-DD" | "week" | "month". */
@@ -396,7 +419,7 @@ export function renderBody(data, view, now) {
 }
 
 // ------------------------------------------------------------ lock page
-export function renderLock(data, now, loc, wx) {
+export function renderLock(data, now, loc, wx, battery) {
   const c = new Canvas();
   const g = c.g;
   const name = (data.lock_name || data.child_name || "").trim();
@@ -413,46 +436,64 @@ export function renderLock(data, now, loc, wx) {
     g.text(40, y + 80, `${wx.text}  ·  ${Math.round(wx.lo)}° bis ${Math.round(wx.hi)}°`, 34, false);
     g.text(W - 40, H - 30, `${Math.round(wx.temp)}°`, 140, true, 0, "rs");
   }
-  g.text(40, H - 40, "Gesperrt · Ein/Aus-Taste zum Entsperren", 22, false, 130, "ls");
+  if (battery) g.text(40, y + (wx ? 140 : 80), `Akku ${battery} %`, 34, false);
+  g.text(40, H - 40, "Gesperrt · Ein/Aus-Taste zum Entsperren", 26, false, SUB, "ls");
   return c;
 }
 
-// ------------------------------------------------------------ light page
+// ------------------------------------------------------------ settings page (light + WLAN)
 // Front light level 0..24 (same scale as the Kindle powerd flIntensity).
 export const FL_MAX = 24;
 const FL_PRESETS = [[0, "Aus"], [6, "Wenig"], [12, "Mittel"], [18, "Hell"], [24, "Max"]];
 
-export function renderLight(fl) {
+/** wifi: { ssid, sig } as reported by the Kindle (either may be empty). tab: "l" light | "w" WLAN. */
+export function renderLight(fl, wifi = {}, tab = "l") {
   const c = new Canvas();
   const g = c.g;
   const lvl = Math.max(0, Math.min(FL_MAX, fl | 0));
-  g.text(40, 24, "Licht", 72, true);
-  iconBulb(g, W - 100, 82, 60, 0, 255);
-  g.text(40, 140, lvl ? `Stufe ${lvl} von ${FL_MAX}` : "Das Licht ist aus", 42, false, 70);
+  g.text(40, 24, "Einstellungen", 64, true);
 
-  // 12 bars, each one = 2 steps; tap a bar to pick that level
-  const n = 12, gap = 14, bw = (W - 80 - gap * (n - 1)) / n, base = 640;
-  for (let i = 0; i < n; i++) {
-    const x = 40 + i * (bw + gap), h = 100 + (300 * i) / (n - 1), v = 2 * (i + 1);
-    g.box([x, base - h, x + bw, base], 10, lvl >= v ? { fill: 0 } : { fill: 255, outline: 0, width: 4 });
-    c.zone([x - gap / 2, 220, x + bw + gap / 2, base + 20], `fl:${v}`);
-  }
-
-  // minus / level / plus
-  pill(g, [40, 700, 340, 840], "–", 72, false);
-  c.zone([40, 690, 340, 850], "flstep:-2");
-  g.text(W / 2, 770, String(lvl), 110, true, 0, "mm");
-  pill(g, [W - 340, 700, W - 40, 840], "+", 72, false);
-  c.zone([W - 340, 690, W - 40, 850], "flstep:2");
-
-  // presets
-  const pg = 14, pw = (W - 80 - pg * (FL_PRESETS.length - 1)) / FL_PRESETS.length;
-  FL_PRESETS.forEach(([v, label], i) => {
-    const box = [40 + i * (pw + pg), 900, 40 + i * (pw + pg) + pw, 1000];
-    pill(g, box, label, 34, lvl === v);
-    c.zone([box[0], box[1] - 10, box[2], box[3] + 10], `fl:${v}`);
+  // tabs, same look as Tag / Woche / Monat
+  const x0 = 30, gap = 16, tw = (W - 2 * x0 - gap) / 2;
+  [["l", "Licht"], ["w", "WLAN"]].forEach(([key, label], i) => {
+    const bx = x0 + i * (tw + gap), box = [bx, 126, bx + tw, 200], on = key === tab;
+    g.box(box, 36, on ? { fill: 0 } : { fill: 255, outline: 0, width: 5 });
+    g.text((box[0] + box[2]) / 2, 163, label, 40, true, on ? 255 : 0, "mm");
+    c.zone([box[0] - gap / 2, box[1] - 8, box[2] + gap / 2, box[3] + 8], `stab:${key}`);
   });
-  g.text(40, 1050, "Die Ein/Aus-Taste sperrt den Bildschirm und macht das Licht aus.", 26, false, 110);
+
+  if (tab === "w") {
+    // this page came over WLAN, so it is connected
+    const ssid = (wifi.ssid || "").trim();
+    g.text(40, 260, ssid ? `Verbunden mit ${clip(ssid, W - 400, 40, true)}` : "Verbunden", 40, true);
+    if (wifi.sig) g.text(40, 324, `Signal: ${wifi.sig}`, 34, false, SUB);
+    pill(g, [40, 400, W - 40, 520], "Neu verbinden", 44, false);
+    c.zone([40, 390, W - 40, 530], "wifi");
+    g.text(40, 560, "Hilft, wenn neue Seiten nicht mehr kommen.", 30, false, SUB);
+  } else {
+    g.text(40, 250, lvl ? `Stufe ${lvl} von ${FL_MAX}` : "Das Licht ist aus", 40, false, SUB);
+    // 12 bars, each one = 2 steps; tap a bar to pick that level
+    const n = 12, bg = 14, bw = (W - 80 - bg * (n - 1)) / n, base = 640;
+    for (let i = 0; i < n; i++) {
+      const x = 40 + i * (bw + bg), h = 80 + (240 * i) / (n - 1), v = 2 * (i + 1);
+      g.box([x, base - h, x + bw, base], 10, lvl >= v ? { fill: 0 } : { fill: 255, outline: 0, width: 4 });
+      c.zone([x - bg / 2, 310, x + bw + bg / 2, base + 14], `fl:${v}`);
+    }
+    // minus / level / plus
+    pill(g, [40, 690, 340, 820], "–", 72, false);
+    c.zone([40, 680, 340, 830], "flstep:-2");
+    g.text(W / 2, 755, String(lvl), 110, true, 0, "mm");
+    pill(g, [W - 340, 690, W - 40, 820], "+", 72, false);
+    c.zone([W - 340, 680, W - 40, 830], "flstep:2");
+    // presets
+    const pg = 14, pw = (W - 80 - pg * (FL_PRESETS.length - 1)) / FL_PRESETS.length;
+    FL_PRESETS.forEach(([v, label], i) => {
+      const box = [40 + i * (pw + pg), 870, 40 + i * (pw + pg) + pw, 970];
+      pill(g, box, label, 34, lvl === v);
+      c.zone([box[0], box[1] - 10, box[2], box[3] + 10], `fl:${v}`);
+    });
+    g.text(40, 1020, "Die Ein/Aus-Taste sperrt den Bildschirm und macht das Licht aus.", 26, false, SUB);
+  }
 
   pill(g, [24, 1300, W - 24, 1420], "Fertig", 44, true);
   c.zone([24, 1290, W - 24, H], "done");
@@ -528,7 +569,7 @@ function renderMessage(data, st) {
   let y = bottom;
   const msgs = recentMessages(data);
   const o = Math.min(st.o || 0, Math.max(0, msgs.length - 1));
-  if (!msgs.length) g.text(W / 2, (top + bottom) / 2, "Noch keine Nachrichten", 34, false, 150, "mm");
+  if (!msgs.length) g.text(W / 2, (top + bottom) / 2, "Noch keine Nachrichten", 34, false, MUTED, "mm");
   let i = msgs.length - 1 - o;
   for (; i >= 0 && y > top + 60; i--) {
     const m = msgs[i];
@@ -539,8 +580,8 @@ function renderMessage(data, st) {
     const h = 44 + lines.length * tlh + 10, w = Math.max(...lines.map((l) => textWidth(l, ts, true)), textWidth(m.from, 24, false)) + 40;
     const x0 = m.me ? ax - 20 - w : 24;
     y -= h;
-    g.box([x0, y, x0 + w, y + h - 8], 18, m.me ? { fill: 225 } : { fill: 255, outline: 0, width: 3 });
-    g.text(x0 + 20, y + 8, m.from, 24, false, 90);
+    g.box([x0, y, x0 + w, y + h - 8], 18, m.me ? { fill: FILL } : { fill: 255, outline: 0, width: 3 });
+    g.text(x0 + 20, y + 8, m.from, 24, false, SUB);
     lines.forEach((l, k) => g.text(x0 + 20, y + 44 + k * tlh + tlh / 2 - 4, l, ts, true, 0, "lm"));
     y -= 6;
   }
@@ -559,20 +600,20 @@ function renderMessage(data, st) {
   } else {
     const ly = fb[1] + 22 + lh / 2;
     g.rect(fb[0] + 30, ly - 20, fb[0] + 35, ly + 20, 0);
-    g.text(fb[0] + 52, ly, st.f === 1 ? "Gesendet! Schreib noch eine?" : "Was möchtest du sagen?", 38, false, 150, "lm");
+    g.text(fb[0] + 52, ly, st.f === 1 ? "Gesendet! Schreib noch eine?" : "Was möchtest du sagen?", 38, false, MUTED, "lm");
   }
   if (!kb) c.zone(fb, "kb"); // tap the text field to bring the keyboard back
   const kbb = [W - 24 - 120, fy, W - 24, fy + 140]; // keyboard on/off next to the text field; black = shown
   g.box(kbb, 24, kb ? { fill: 0 } : { fill: 255, outline: 0, width: 5 });
   keyboardIcon(g, (kbb[0] + kbb[2]) / 2, (kbb[1] + kbb[3]) / 2, kb ? 255 : 0, kb ? 0 : 255);
   c.zone([kbb[0] - 8, kbb[1] - 8, kbb[2] + 8, kbb[3] + 8], "kb");
-  if (st.f === 2) g.text(40, kb ? 1240 : 1105, "Nicht gesendet. Bitte nochmal versuchen.", 34, true, 0, "lm");
-  if (kb) drawKeyboard(c, st, 644);
+  if (st.f === 2) g.text(W - 24, 56, "Nicht gesendet!", 36, true, 0, "rm");
+  if (kb) drawKeyboard(c, st, 644, 116); // ends at 1272, just above the buttons
   const by0 = 1300, by1 = 1420;
   pill(g, [24, by0, 520, by1], "Fertig", 44, false);
   c.zone([24, by0 - 10, 520, H], "cancel");
   const can = st.s.trim().length > 0;
-  pill(g, [552, by0, W - 24, by1], "Senden", 44, can, can ? {} : { outline: 170, textColor: 170 });
+  pill(g, [552, by0, W - 24, by1], st.f === 2 ? "Nochmal senden" : "Senden", 44, can, can ? {} : { outline: FAINT, textColor: FAINT });
   c.zone([552, by0 - 10, W - 24, H], "save");
   return c;
 }
@@ -581,7 +622,7 @@ export function renderCompose(data, st, now) {
   if (st.t === "m") return renderMessage(data, st);
   const c = new Canvas();
   const g = c.g;
-  g.text(40, 24, st.t === "e" ? "Neuer Termin" : "Neue Aufgabe", 56, true);
+  g.text(40, 24, "Neu", 56, true);
   // type toggle
   [["e", "Termin"], ["h", "Aufgabe"]].forEach(([k, label], i) => {
     const box = [600 + i * 230, 26, 600 + i * 230 + 216, 90];
@@ -601,11 +642,11 @@ export function renderCompose(data, st, now) {
     g.rect(fb[0] + 36 + w, fb[1] + 22, fb[0] + 41 + w, fb[3] - 22, 0);
   } else {
     g.rect(fb[0] + 30, fb[1] + 22, fb[0] + 35, fb[3] - 22, 0);
-    g.text(fb[0] + 52, (fb[1] + fb[3]) / 2, st.t === "e" ? "Was ist los?" : "Was willst du tun?", 42, false, 150, "lm");
+    g.text(fb[0] + 52, (fb[1] + fb[3]) / 2, st.t === "e" ? "Was ist los?" : "Was willst du tun?", 42, false, MUTED, "lm");
   }
 
   // how often
-  g.text(40, 232, "Wie oft?", 26, false, 70);
+  g.text(40, 232, "Wie oft?", 26, false, SUB);
   const often = st.t === "e" ? [["once", "Einmal"], ["daily", "Jeden Tag"], ["days", "Bestimmte Tage"]]
     : [["daily", "Jeden Tag"], ["days", "Bestimmte Tage"]];
   const ow = (W - 48 - 10 * (often.length - 1)) / often.length;
@@ -618,7 +659,7 @@ export function renderCompose(data, st, now) {
   // which day(s)
   const n = 7, gap = 10, w = (W - 48 - gap * (n - 1)) / n;
   if (st.r === "once") {
-    g.text(40, 346, "Wann?", 26, false, 70);
+    g.text(40, 346, "Wann?", 26, false, SUB);
     for (let i = 0; i < n; i++) {
       const day = addDays(now.date, i);
       const box = [24 + i * (w + gap), 382, 24 + i * (w + gap) + w, 444];
@@ -626,32 +667,35 @@ export function renderCompose(data, st, now) {
       c.zone([box[0], box[1] - 8, box[2], box[3] + 8], `day:${i}`);
     }
   } else if (st.r === "days") {
-    g.text(40, 346, "An welchen Tagen? (mehrere möglich)", 26, false, 70);
+    g.text(40, 346, "An welchen Tagen? (mehrere möglich)", 26, false, SUB);
     for (let i = 0; i < n; i++) {
       const box = [24 + i * (w + gap), 382, 24 + i * (w + gap) + w, 444];
       pill(g, box, DAY_SHORT[i], 30, !!(st.w & (1 << i)));
       c.zone([box[0], box[1] - 8, box[2], box[3] + 8], `wd:${i}`);
     }
   } else {
-    g.text(40, 346, "Jeden Tag, ab heute", 26, false, 70);
+    g.text(40, 346, "Jeden Tag, ab heute", 26, false, SUB);
   }
 
   // time (event) or period (habit)
   if (st.t === "e") {
-    g.text(40, 460, "Uhrzeit", 26, false, 70);
-    const row = 496;
-    const items = [
-      [24, 290, "allday", "Ganztägig", st.tm < 0],
-      [310, 410, "tminus", "–", false],
-      [430, 650, "none", st.tm < 0 ? "--:--" : `${pad2(Math.floor(st.tm / 60))}:${pad2(st.tm % 60)}`, st.tm >= 0],
-      [670, 770, "tplus", "+", false],
-    ];
-    for (const [x0, x1, act, label, on] of items) {
-      pill(g, [x0, row, x1, row + 62], label, act === "tminus" || act === "tplus" ? 48 : 32, on);
-      if (act !== "none") c.zone([x0, row - 8, x1, row + 70], act);
-    }
+    g.text(40, 460, "Uhrzeit", 26, false, SUB);
+    const row = 496, set = st.tm >= 0;
+    pill(g, [24, row, 290, row + 62], "Ganztägig", 32, !set);
+    c.zone([24, row - 8, 290, row + 70], "allday");
+    // hour and minute each get their own – / +, so any time is a few taps away
+    [[312, "h", set ? pad2(Math.floor(st.tm / 60)) : "--", "Stunde"], [732, "m", set ? pad2(st.tm % 60) : "--", "Minute"]]
+      .forEach(([x, k, val, unit]) => {
+        pill(g, [x, row, x + 88, row + 62], "–", 48, false);
+        c.zone([x - 8, row - 8, x + 93, row + 70], `${k}minus`);
+        pill(g, [x + 98, row, x + 218, row + 62], val, 34, set);
+        g.text(x + 158, row + 66, unit, 22, false, SUB, "ma");
+        pill(g, [x + 228, row, x + 316, row + 62], "+", 48, false);
+        c.zone([x + 223, row - 8, x + 324, row + 70], `${k}plus`);
+      });
+    g.text(680, row + 31, ":", 48, true, 0, "mm");
   } else {
-    g.text(40, 460, "Wann am Tag?", 26, false, 70);
+    g.text(40, 460, "Wann am Tag?", 26, false, SUB);
     const pw = (W - 48 - 20) / 3;
     PERIODS.forEach(([, label], i) => {
       const box = [24 + i * (pw + 10), 496, 24 + i * (pw + 10) + pw, 558];
@@ -660,21 +704,21 @@ export function renderCompose(data, st, now) {
     });
   }
 
-  drawKeyboard(c, st);
+  drawKeyboard(c, st, 608, 124); // ends at 1276, just above the buttons
 
   // buttons
   const by0 = 1300, by1 = 1420;
   pill(g, [24, by0, 520, by1], "Abbrechen", 44, false);
   c.zone([24, by0 - 10, 520, H], "cancel");
   const can = st.s.trim().length > 0 && !(st.r === "days" && !st.w);
-  pill(g, [552, by0, W - 24, by1], "Speichern", 44, can, can ? {} : { outline: 170, textColor: 170 });
+  pill(g, [552, by0, W - 24, by1], "Speichern", 44, can, can ? {} : { outline: FAINT, textColor: FAINT });
   c.zone([552, by0 - 10, W - 24, H], "save");
   return c;
 }
 
-function drawKeyboard(c, st, ky = 590) {
+function drawKeyboard(c, st, ky, kh = 96) {
   const g = c.g;
-  const unit = (W - 48) / 11, kh = 96, gapK = 8;
+  const unit = (W - 48) / 11, gapK = 8;
   const upper = !!st.sh;
   for (const row of KB) {
     const units = row.reduce((s, k) => s + (Array.isArray(k) ? k[1] : 1), 0);
@@ -684,15 +728,15 @@ function drawKeyboard(c, st, ky = 590) {
       const box = [kx + gapK / 2, ky, kx + u * unit - gapK / 2, ky + kh];
       const special = name === "shift" || name === "back" || name === "space";
       const on = name === "shift" && upper;
-      g.box(box, 14, on ? { fill: 0 } : { fill: special ? 225 : 255, outline: 0, width: 3 });
+      g.box(box, 14, on ? { fill: 0 } : { fill: special ? FILL : 255, outline: 0, width: 3 });
       const cx = (box[0] + box[2]) / 2, cy = (box[1] + box[3]) / 2;
       if (name === "shift") {
         const col = on ? 255 : 0;
         g.poly([[cx, cy - 24], [cx + 24, cy + 2], [cx + 11, cy + 2], [cx + 11, cy + 22], [cx - 11, cy + 22], [cx - 11, cy + 2], [cx - 24, cy + 2]], col);
       } else if (name === "back") {
         g.poly([[cx - 34, cy], [cx - 14, cy - 22], [cx + 32, cy - 22], [cx + 32, cy + 22], [cx - 14, cy + 22]], 0);
-        g.line(cx - 4, cy - 10, cx + 16, cy + 10, 5, 225, true);
-        g.line(cx - 4, cy + 10, cx + 16, cy - 10, 5, 225, true);
+        g.line(cx - 4, cy - 10, cx + 16, cy + 10, 5, FILL, true);
+        g.line(cx - 4, cy + 10, cx + 16, cy - 10, 5, FILL, true);
       } else if (name === "space") {
         g.text(cx, cy, "Leertaste", 30, false, 0, "mm");
       } else {

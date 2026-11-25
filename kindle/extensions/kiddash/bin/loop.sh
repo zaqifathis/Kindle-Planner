@@ -12,6 +12,7 @@ STATE=/tmp/kiddash.state      # UI state from the server (empty = home page)
 LOCKED=/tmp/kiddash.locked    # exists while the screen is locked
 LASTTAP=/tmp/kiddash.lasttap
 TAPHDR=/tmp/kiddash.taphdr
+DRAFT=/tmp/kiddash.draft      # exists while the add page holds typed text
 echo "start $(date)"
 # HTTPS with a current certificate bundle (the Kindle's own one is old).
 CURL="curl -s --cacert $DIR/cacert.pem "
@@ -50,6 +51,29 @@ cleanup() {
 
 # Fetch the current page and draw it. $1 = "full" forces a flashing refresh.
 # Returns 0 on success, 2 on stop command.
+# WLAN name as hex (any byte survives the URL) and signal like "4/5", for the settings page.
+wifi_q() {
+  # currentEssid is empty on some firmware; then ask wpa_supplicant, then the driver
+  SSID=$(lipc-get-prop com.lab126.wifid currentEssid 2>/dev/null)
+  [ -z "$SSID" ] && SSID=$(wpa_cli status 2>/dev/null | sed -n 's/^ssid=//p')
+  [ -z "$SSID" ] && SSID=$(iwconfig wlan0 2>/dev/null | sed -n 's/.*ESSID:"\(.*\)".*/\1/p')
+  WS=$(printf '%s' "$SSID" | od -An -tx1 | tr -d ' \n')
+  WQ=$(lipc-get-prop com.lab126.wifid signalStrength 2>/dev/null | tr -dc '0-9/')
+  printf 'ws=%s&wq=%s' "$WS" "$WQ"
+}
+# Turn WLAN off and on, then wait up to 40 s for the connection.
+wifi_reconnect() {
+  eips 1 58 "WLAN wird neu verbunden ...  " >/dev/null 2>&1
+  lipc-set-prop com.lab126.cmd wirelessEnable 0 2>/dev/null
+  sleep 3
+  lipc-set-prop com.lab126.cmd wirelessEnable 1 2>/dev/null
+  i=0
+  while [ $i -lt 20 ]; do
+    [ "$(lipc-get-prop com.lab126.wifid cmState 2>/dev/null)" = "CONNECTED" ] && break
+    sleep 2; i=$((i + 1))
+  done
+}
+
 show() {
   (
     flock -x 9
@@ -58,7 +82,7 @@ show() {
     S=$(cat "$STATE" 2>/dev/null)
     L=0; [ -f "$LOCKED" ] && L=1
     rm -f "$IMG" "$HDR"
-    if $CURL -m 20 -D "$HDR" -o "$IMG" "$SERVER/dashboard.png?bat=$BAT&lock=$L&s=$S&fl=$(cur_light)" \
+    if $CURL -m 20 -D "$HDR" -o "$IMG" "$SERVER/dashboard.png?bat=$BAT&lock=$L&s=$S&fl=$(cur_light)&$(wifi_q)" \
        && grep -q " 200" "$HDR" && [ -s "$IMG" ]; then
       if [ "$1" = "full" ] || [ $((n % FULL_EVERY)) -eq 0 ]; then
         eips -f -g "$IMG" >/dev/null 2>&1
@@ -130,19 +154,26 @@ pd_wake() {
 
 # Touch: each tap goes to the server, which returns the new UI state.
 (
-  lua "$DIR/bin/touch.lua" /dev/input/event1 | while read -r X Y; do
+  READY=0
+  lua "$DIR/bin/touch.lua" /dev/input/event1 | while read -r X Y T; do
     [ -f "$LOCKED" ] && continue          # locked: ignore the touch screen
+    # Drop taps made while the last one was still loading; a repeated tap would undo a tick.
+    # shortcut: whole seconds, so a tap in the same second as the last redraw still counts.
+    [ -n "$T" ] && [ "$T" -lt "$READY" ] && continue
     date +%s > "$LASTTAP"
     S=$(cat "$STATE" 2>/dev/null)
     rm -f "$TAPHDR"
     NEW=$($CURL -m 10 -D "$TAPHDR" "$SERVER/tap?x=$X&y=$Y&s=$S&fl=$(cur_light)")
     if [ $? -eq 0 ]; then
       printf '%s' "$NEW" > "$STATE"
+      if grep -qi '^X-Kindle-Draft:' "$TAPHDR" 2>/dev/null; then touch "$DRAFT"; else rm -f "$DRAFT"; fi
       FLNEW=$(grep -i '^X-Kindle-Light:' "$TAPHDR" 2>/dev/null | tr -dc '0-9')
       [ -n "$FLNEW" ] && set_light "$FLNEW"
+      grep -qi '^X-Kindle-Wifi: *reconnect' "$TAPHDR" 2>/dev/null && wifi_reconnect
     fi
     show
     [ $? -eq 2 ] && kill -USR1 $$ 2>/dev/null
+    READY=$(date +%s)
   done
 ) &
 TOUCH_PID=$!
@@ -181,10 +212,12 @@ trap cleanup USR1
 
 fails=0
 while true; do
-  # Back to today's page (and out of the add page) after 4 minutes without a tap.
+  # Back to today's page (and out of the add page) after 4 minutes without a tap,
+  # or after 15 minutes when a half-typed entry would be lost.
   if [ -s "$STATE" ]; then
     LT=$(cat "$LASTTAP" 2>/dev/null || echo 0)
-    [ $(( $(date +%s) - LT )) -gt 240 ] && : > "$STATE"
+    IDLE=240; [ -f "$DRAFT" ] && IDLE=900
+    [ $(( $(date +%s) - LT )) -gt $IDLE ] && { : > "$STATE"; rm -f "$DRAFT"; }
   fi
   # Safety net: if powerd left "active" anyway, log it and wake it.
   PS=$(pd_state)

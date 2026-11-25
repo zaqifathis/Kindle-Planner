@@ -9,9 +9,11 @@ The Kindle UI is in German. The web dashboard has an English/German switch.
 On the Kindle:
 
 - Day, Week, and Month tabs.
-- Day view with a clock, temperature, today's events, and Morning / Afternoon / Night habits. Only the current time-of-day section is open. A tap on a collapsed header opens it.
+- A header row with the time and date as text, and buttons for messages, add, and settings. Below it the Day, Week, and Month tabs.
+- Day view with today's events and Morning / Afternoon / Night habits. Only the current time-of-day section is open. A tap on a collapsed header opens it.
 - An add screen with an on-screen keyboard for events and habits (once, every day, or specific weekdays).
-- A front light page (level 0 to 24). The level survives a reboot.
+- A settings page: front light (level 0 to 24, the level survives a reboot) and WLAN status with a reconnect button.
+- The lock page shows a large clock, the weather, and the battery level.
 - The power button locks the screen. The front light goes off while locked and comes back on unlock.
 - Autostart at boot.
 - A return to the day page after 4 minutes without a tap.
@@ -75,13 +77,14 @@ A Cloudflare Worker on the free plan. The free plan allows 10 ms of CPU per requ
 | File | Purpose |
 |------|---------|
 | `src/index.js` | Router, authentication, KV data model (version 4, with migration from older versions), weather, tap handling, REST API. |
-| `src/render.js` | Page layouts: day, week, month, add screen, light page, lock screen. Returns pixels and tap zones. |
+| `src/render.js` | Page layouts: day, week, month, add screen, settings page, lock screen. Returns pixels and tap zones. |
 | `src/raster.js` | 8-bit grayscale span rasterizer that draws text from a pre-rendered glyph atlas. |
 | `src/png.js` | Minimal PNG encoder. Uses fixed Huffman codes and run-length matches, because e-ink pages are mostly long runs of one gray level. |
 | `src/glyphs.bin`, `src/glyphs.json` | Glyph atlas for Noto Sans (built by `tools/build_glyphs.py`). |
 | `public/index.html` | Web dashboard for parents (static asset). |
 | `tools/bench.mjs` | Local timing test for rendering and encoding. |
 | `tools/test_access.mjs` | 12 local test cases for the Access JWT check. |
+| `tools/test_render.mjs` | Local checks for emoji text, the time steppers, and the empty day hint. |
 
 Routes:
 

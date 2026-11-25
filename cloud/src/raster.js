@@ -27,11 +27,30 @@ function font(size, bold) {
   return GLYPH_META[(bold ? "b" : "r") + size] || GLYPH_META[(bold ? "b" : "r") + fsize(size, bold)];
 }
 
+const NONE = [0, 0, 0, 0, 0, 0];
+/** Missing letter: try its base letter (ë -> e), else draw nothing. */
 function glyph(f, ch) {
-  return f.g[ch] || f.g["?"] || f.g["0"];
+  return f.g[ch] || f.g[ch.normalize("NFD")[0]] || NONE;
+}
+
+// The font has no emoji. Common ones become text smileys, the rest are dropped.
+const EMOJI = [
+  [/[\u2764\u2665\u2661\u{1F493}-\u{1F49F}\u{1F90D}\u{1F90E}\u{1F9E1}\u{1F499}-\u{1F49C}\u{1F5A4}\u{1F60D}\u{1F618}\u{1F970}\u{1FA77}-\u{1FA79}]/gu, "<3"],
+  [/[\u{1F600}-\u{1F606}\u{1F923}\u{1F602}]/gu, ":D"],
+  [/[\u263A\u{1F60A}\u{1F642}\u{1F607}\u{1F917}\u{1F60C}]/gu, ":)"],
+  [/[\u{1F609}\u{1F61C}]/gu, ";)"],
+  [/[\u2639\u{1F61E}\u{1F622}\u{1F625}\u{1F62D}\u{1F641}]/gu, ":("],
+  [/[\p{Extended_Pictographic}\p{Emoji_Modifier}\uFE0F\u200D]/gu, ""],
+];
+export function plain(s) {
+  s = String(s);
+  if (!/[^\u0000-\u024F\u2000-\u20FF]/.test(s)) return s;
+  for (const [re, to] of EMOJI) s = s.replace(re, to);
+  return s.replace(/ {2,}/g, " ");
 }
 
 export function textWidth(s, size, bold) {
+  s = plain(s);
   const f = font(size, bold);
   let w = 0;
   for (const ch of s) w += glyph(f, ch)[0];
@@ -51,6 +70,7 @@ export function fit(s, maxW, size, bold = true) {
 
 /** Cut text with an ellipsis so it fits in maxW. */
 export function clip(s, maxW, size, bold) {
+  s = plain(s);
   if (textWidth(s, size, bold) <= maxW) return s;
   const chars = [...s];
   while (chars.length && textWidth(chars.join("") + "…", size, bold) > maxW) chars.pop();
@@ -146,6 +166,7 @@ export class Img {
    * Returns the text width.
    */
   text(x, y, s, size, bold, color = 0, anchor = "la") {
+    s = plain(s);
     const f = font(size, bold);
     const w = textWidth(s, size, bold);
     const h = anchor[0], v = anchor[1] || "a";
