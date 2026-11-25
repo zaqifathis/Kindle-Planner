@@ -108,6 +108,17 @@ function iconMoon(g, cx, cy, r, fg, bg) {
   g.disc(cx + r * 0.35, cy - r * 0.25, r * 0.72, bg);
   for (const [sx, sy] of [[0.75, 0.55], [0.95, 0.05]]) g.disc(cx + r * sx, cy + r * sy, 4, fg);
 }
+function iconBulb(g, cx, cy, r, fg, bg) {
+  const by = cy - r * 0.12;
+  g.ring(cx, by, r * 0.5, Math.max(4, Math.floor(r / 9)), fg, bg);
+  const w = Math.max(4, Math.floor(r / 9));
+  g.line(cx - r * 0.22, cy + r * 0.52, cx + r * 0.22, cy + r * 0.52, w, fg, true);
+  g.line(cx - r * 0.16, cy + r * 0.72, cx + r * 0.16, cy + r * 0.72, w, fg, true);
+  for (const deg of [-160, -125, -90, -55, -20]) {
+    const a = (deg * Math.PI) / 180;
+    g.line(cx + r * 0.7 * Math.cos(a), by + r * 0.7 * Math.sin(a), cx + r * 0.95 * Math.cos(a), by + r * 0.95 * Math.sin(a), w, fg, true);
+  }
+}
 function star(g, cx, cy, r, c = 0) {
   const pts = [];
   for (let k = 0; k < 10; k++) {
@@ -155,13 +166,18 @@ export function drawHeader(g, data, now, loc, wx, battery) {
 // ------------------------------------------------------------ home body
 function drawTabs(c, active) {
   const g = c.g, gap = 16, x0 = 30, plusW = 110;
-  const tw = Math.floor((W - 2 * x0 - plusW - 3 * gap) / 3);
+  const tw = Math.floor((W - 2 * x0 - 2 * plusW - 4 * gap) / 3);
   [["day", "Tag"], ["week", "Woche"], ["month", "Monat"]].forEach(([key, label], i) => {
     const bx = x0 + i * (tw + gap), box = [bx, TABS_Y0, bx + tw, TABS_Y1], on = key === active;
     g.box(box, 36, on ? { fill: 0 } : { fill: 255, outline: 0, width: 5 });
     g.text((box[0] + box[2]) / 2, (TABS_Y0 + TABS_Y1) / 2, label, 40, true, on ? 255 : 0, "mm");
     c.zone(box, `view:${key}`);
   });
+  // light button
+  const lb = [W - x0 - 2 * plusW - gap, TABS_Y0, W - x0 - plusW - gap, TABS_Y1];
+  g.box(lb, 36, { fill: 255, outline: 0, width: 5 });
+  iconBulb(g, (lb[0] + lb[2]) / 2, (lb[1] + lb[3]) / 2, 30, 0, 255);
+  c.zone([lb[0], lb[1] - 10, lb[2] + gap / 2, lb[3] + 10], "light");
   // add button
   const pb = [W - x0 - plusW, TABS_Y0, W - x0, TABS_Y1];
   g.box(pb, 36, { fill: 0 });
@@ -368,6 +384,48 @@ export function renderLock(data, now, loc, wx) {
     g.text(W - 40, H - 30, `${Math.round(wx.temp)}°`, 140, true, 0, "rs");
   }
   g.text(40, H - 40, "Gesperrt · Ein/Aus-Taste zum Entsperren", 22, false, 130, "ls");
+  return c;
+}
+
+// ------------------------------------------------------------ light page
+// Front light level 0..24 (same scale as the Kindle powerd flIntensity).
+export const FL_MAX = 24;
+const FL_PRESETS = [[0, "Aus"], [6, "Wenig"], [12, "Mittel"], [18, "Hell"], [24, "Max"]];
+
+export function renderLight(fl) {
+  const c = new Canvas();
+  const g = c.g;
+  const lvl = Math.max(0, Math.min(FL_MAX, fl | 0));
+  g.text(40, 24, "Licht", 72, true);
+  iconBulb(g, W - 100, 82, 60, 0, 255);
+  g.text(40, 140, lvl ? `Stufe ${lvl} von ${FL_MAX}` : "Das Licht ist aus", 42, false, 70);
+
+  // 12 bars, each one = 2 steps; tap a bar to pick that level
+  const n = 12, gap = 14, bw = (W - 80 - gap * (n - 1)) / n, base = 640;
+  for (let i = 0; i < n; i++) {
+    const x = 40 + i * (bw + gap), h = 100 + (300 * i) / (n - 1), v = 2 * (i + 1);
+    g.box([x, base - h, x + bw, base], 10, lvl >= v ? { fill: 0 } : { fill: 255, outline: 0, width: 4 });
+    c.zone([x - gap / 2, 220, x + bw + gap / 2, base + 20], `fl:${v}`);
+  }
+
+  // minus / level / plus
+  pill(g, [40, 700, 340, 840], "–", 72, false);
+  c.zone([40, 690, 340, 850], "flstep:-2");
+  g.text(W / 2, 770, String(lvl), 110, true, 0, "mm");
+  pill(g, [W - 340, 700, W - 40, 840], "+", 72, false);
+  c.zone([W - 340, 690, W - 40, 850], "flstep:2");
+
+  // presets
+  const pg = 14, pw = (W - 80 - pg * (FL_PRESETS.length - 1)) / FL_PRESETS.length;
+  FL_PRESETS.forEach(([v, label], i) => {
+    const box = [40 + i * (pw + pg), 900, 40 + i * (pw + pg) + pw, 1000];
+    pill(g, box, label, 34, lvl === v);
+    c.zone([box[0], box[1] - 10, box[2], box[3] + 10], `fl:${v}`);
+  });
+  g.text(40, 1050, "Die Ein/Aus-Taste sperrt den Bildschirm und macht das Licht aus.", 26, false, 110);
+
+  pill(g, [24, 1300, W - 24, 1420], "Fertig", 44, true);
+  c.zone([24, 1290, W - 24, H], "done");
   return c;
 }
 

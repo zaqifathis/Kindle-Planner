@@ -3,7 +3,7 @@
 // The Kindle keeps the UI state (tab, add screen, draft text) and sends it as ?s=...,
 // so switching tabs and typing do not write to KV.
 import {
-  renderBody, renderLock, renderCompose, composeDefaults, drawHeader,
+  renderBody, renderLock, renderCompose, renderLight, composeDefaults, drawHeader, FL_MAX,
   habitsOn, isDone, progress, eventsOn, localNow, iso, parseDate, addDays, weekday, periodIndex,
   PERIODS, ALL_DAYS, W, H, SPLIT,
 } from "./render.js";
@@ -137,6 +137,7 @@ function decodeState(s, now) {
   try {
     const raw = atob(s.replace(/-/g, "+").replace(/_/g, "/"));
     const st = JSON.parse(new TextDecoder().decode(Uint8Array.from(raw, (c) => c.charCodeAt(0))));
+    if (st.m === "l") return { m: "l" };
     if (st.m !== "c") {
       const v = String(st.v || "day");
       return { m: "h", v: /^(day|week|month)(:\d{4}-\d{2}-\d{2})?(@[0-2]\.[0-2])?$/.test(v) ? v : "day" };
@@ -175,7 +176,8 @@ function body(data, view, now) {
   return b;
 }
 
-function renderPage(kind, data, st, { now, loc, wx, battery }) {
+function renderPage(kind, data, st, { now, loc, wx, battery, fl }) {
+  if (kind === "light") return assemblePNG(W, H, [encodeRows(renderLight(fl).g, 0, H, true)]);
   if (kind === "lock") return assemblePNG(W, H, [encodeRows(renderLock(data, now, loc, wx).g, 0, H, true)]);
   if (kind === "compose") return assemblePNG(W, H, [encodeRows(renderCompose(data, st, now).g, 0, H, true)]);
   const b = body(data, st.v || "day", now);
@@ -199,9 +201,19 @@ function toggle(data, dateStr, id) {
   data.done[dateStr] = [...done].sort();
 }
 
-function applyAction(action, st, data, now) {
+const clampFl = (v) => Math.max(0, Math.min(FL_MAX, Math.round(v)));
+const readFl = (url) => { const v = url.searchParams.get("fl"); return v !== null && /^\d+$/.test(v) ? clampFl(+v) : 12; };
+
+function applyAction(action, st, data, now, fl = 12) {
   if (!action) return { st, write: false };
   const [kind, rest] = action.split(/:(.*)/s);
+  if (st.m === "l") {
+    // the level lives on the Kindle; the reply only tells it the new level (X-Kindle-Light)
+    if (kind === "fl") return { st, write: false, fl: clampFl(+rest || 0) };
+    if (kind === "flstep") return { st, write: false, fl: clampFl(fl + (+rest || 0)) };
+    if (kind === "done") return { st: { m: "h", v: "day" }, write: false };
+    return { st, write: false };
+  }
   if (st.m !== "c") {
     if (kind === "toggle") {
       const [d, id] = rest.split(/:(.*)/s);
@@ -212,6 +224,7 @@ function applyAction(action, st, data, now) {
     if (kind === "open") return { st: { m: "h", v: rest }, write: false }; // open one period on the day view
     if (kind === "goto") return { st: { m: "h", v: `day:${rest}` }, write: false };
     if (kind === "compose") return { st: composeDefaults(now), write: false };
+    if (kind === "light") return { st: { m: "l" }, write: false };
     return { st, write: false };
   }
   const s = { ...st };
@@ -435,14 +448,14 @@ export default {
       let kind, st;
       if (fromKindle) {
         st = decodeState(url.searchParams.get("s"), now);
-        kind = url.searchParams.get("lock") === "1" ? "lock" : st.m === "c" ? "compose" : "home";
+        kind = url.searchParams.get("lock") === "1" ? "lock" : st.m === "c" ? "compose" : st.m === "l" ? "light" : "home";
       } else {
         const v = url.searchParams.get("view") || "day";
-        kind = v === "lock" ? "lock" : v === "compose" ? "compose" : "home";
+        kind = v === "lock" ? "lock" : v === "compose" ? "compose" : v === "light" ? "light" : "home";
         st = kind === "compose" ? { ...composeDefaults(now), s: "Schwimmen", r: "days", w: 0b0000101, tm: 15 * 60 + 30, sh: 0 }
           : { m: "h", v: ["day", "week", "month"].includes(v) ? v : "day" };
       }
-      const bytes = renderPage(kind, data, st, { now, loc, wx, battery: bat });
+      const bytes = renderPage(kind, data, st, { now, loc, wx, battery: bat, fl: readFl(url) });
       return png(bytes, fromKindle ? { "X-Kindle-Command": data.kindle_command || "run" } : {});
     }
 
@@ -450,10 +463,14 @@ export default {
       const x = +url.searchParams.get("x"), y = +url.searchParams.get("y");
       if (!Number.isFinite(x) || !Number.isFinite(y)) return json({ error: "x and y needed" }, 400);
       const st = decodeState(url.searchParams.get("s"), now);
-      const zones = st.m === "c" ? renderCompose(data, st, now).zones : body(data, st.v || "day", now).zones;
-      const res = applyAction(hit(zones, x, y), st, data, now);
+      const fl = readFl(url);
+      const zones = st.m === "c" ? renderCompose(data, st, now).zones
+        : st.m === "l" ? renderLight(fl).zones : body(data, st.v || "day", now).zones;
+      const res = applyAction(hit(zones, x, y), st, data, now, fl);
       if (res.write) await save(env, data);
-      return text(encodeState(res.st));
+      const r = text(encodeState(res.st));
+      if (res.fl !== undefined) r.headers.set("X-Kindle-Light", String(res.fl));
+      return r;
     }
 
     // ---- web dashboard API

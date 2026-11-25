@@ -11,6 +11,7 @@ COUNT=/tmp/kiddash.count
 STATE=/tmp/kiddash.state      # UI state from the server (empty = home page)
 LOCKED=/tmp/kiddash.locked    # exists while the screen is locked
 LASTTAP=/tmp/kiddash.lasttap
+TAPHDR=/tmp/kiddash.taphdr
 echo "start $(date)"
 # HTTPS with a current certificate bundle (the Kindle's own one is old).
 CURL="curl -s --cacert $DIR/cacert.pem "
@@ -57,7 +58,7 @@ show() {
     S=$(cat "$STATE" 2>/dev/null)
     L=0; [ -f "$LOCKED" ] && L=1
     rm -f "$IMG" "$HDR"
-    if $CURL -m 20 -D "$HDR" -o "$IMG" "$SERVER/dashboard.png?bat=$BAT&lock=$L&s=$S" \
+    if $CURL -m 20 -D "$HDR" -o "$IMG" "$SERVER/dashboard.png?bat=$BAT&lock=$L&s=$S&fl=$(cur_light)" \
        && grep -q " 200" "$HDR" && [ -s "$IMG" ]; then
       if [ "$1" = "full" ] || [ $((n % FULL_EVERY)) -eq 0 ]; then
         eips -f -g "$IMG" >/dev/null 2>&1
@@ -73,6 +74,12 @@ show() {
   ) 9>"$LOCK"
 }
 
+# First start: keep the level the Kindle had before.
+if [ ! -s "$DIR/light.level" ]; then
+  FL0=$(lipc-get-prop com.lab126.powerd flIntensity 2>/dev/null | tr -dc '0-9')
+  [ -n "$FL0" ] && [ "$FL0" != "0" ] && echo "$FL0" > "$DIR/light.level"
+fi
+
 # Keep the device awake and take over the screen.
 lipc-set-prop com.lab126.powerd preventScreenSaver 1
 stop lab126_gui 2>/dev/null || stop framework 2>/dev/null
@@ -84,52 +91,75 @@ echo 0 > "$COUNT"
 : > "$STATE"
 rm -f "$LOCKED"
 
+# Front light. Level 0..24 (powerd flIntensity scale), chosen on the "Licht" page.
+# The level is saved on the Kindle (survives a reboot). Off while locked, back on when unlocked.
+LIGHT="$DIR/light.level"
+BL=/sys/class/backlight/max77696-bl/brightness
+BLMAX=$(cat /sys/class/backlight/max77696-bl/max_brightness 2>/dev/null || echo 2047)
+cur_light() {
+  v=$(cat "$LIGHT" 2>/dev/null | tr -dc '0-9')
+  echo "${v:-12}"
+}
+# Set the hardware: ask powerd, then (powerd may not act while the GUI is stopped)
+# write the backlight directly. Quadratic curve: low levels stay dim.
+hw_light() {
+  lv=$1
+  lipc-set-prop com.lab126.powerd flIntensity "$lv" 2>/dev/null
+  if [ -w "$BL" ]; then
+    if [ "$lv" -eq 0 ]; then raw=0; else raw=$(( BLMAX * lv * lv / 576 )); [ $raw -lt 1 ] && raw=1; fi
+    ( sleep 1; echo "$raw" > "$BL" ) &
+  fi
+}
+set_light() {
+  lv=$(echo "$1" | tr -dc '0-9'); [ -z "$lv" ] && return
+  [ "$lv" -gt 24 ] && lv=24
+  echo "$lv" > "$LIGHT"
+  [ -f "$LOCKED" ] || hw_light "$lv"
+  echo "light: $lv"
+}
+light_off() { hw_light 0; }
+light_on() { hw_light "$(cur_light)"; }
+light_on   # apply the saved level after a reboot
+
+# powerd state (active / screenSaver / readyToSuspend / ...) and wake-up.
+pd_state() { lipc-get-prop com.lab126.powerd state 2>/dev/null; }
+pd_wake() {
+  lipc-set-prop com.lab126.powerd wakeUp 1 2>/dev/null
+  lipc-set-prop com.lab126.powerd preventScreenSaver 1 2>/dev/null
+}
+
 # Touch: each tap goes to the server, which returns the new UI state.
 (
   lua "$DIR/bin/touch.lua" /dev/input/event1 | while read -r X Y; do
     [ -f "$LOCKED" ] && continue          # locked: ignore the touch screen
     date +%s > "$LASTTAP"
     S=$(cat "$STATE" 2>/dev/null)
-    NEW=$($CURL -m 10 "$SERVER/tap?x=$X&y=$Y&s=$S")
-    [ $? -eq 0 ] && printf '%s' "$NEW" > "$STATE"
+    rm -f "$TAPHDR"
+    NEW=$($CURL -m 10 -D "$TAPHDR" "$SERVER/tap?x=$X&y=$Y&s=$S&fl=$(cur_light)")
+    if [ $? -eq 0 ]; then
+      printf '%s' "$NEW" > "$STATE"
+      FLNEW=$(grep -i '^X-Kindle-Light:' "$TAPHDR" 2>/dev/null | tr -dc '0-9')
+      [ -n "$FLNEW" ] && set_light "$FLNEW"
+    fi
     show
     [ $? -eq 2 ] && kill -USR1 $$ 2>/dev/null
   done
 ) &
 TOUCH_PID=$!
 
-# Front light: off while locked, back on when unlocked.
-# Save both the powerd level (0..24) and the raw backlight value; restore both.
-BL=/sys/class/backlight/max77696-bl/brightness
-light_off() {
-  FL=$(lipc-get-prop com.lab126.powerd flIntensity 2>/dev/null)
-  RAW=$(cat "$BL" 2>/dev/null)
-  echo "${FL:-} ${RAW:-}" > /tmp/kiddash.fl
-  lipc-set-prop com.lab126.powerd flIntensity 0 2>/dev/null
-  [ -w "$BL" ] && echo 0 > "$BL"
-}
-light_on() {
-  read FL RAW < /tmp/kiddash.fl 2>/dev/null
-  # never come back dark: fall back to a medium level
-  [ -z "$FL" ] || [ "$FL" = "0" ] && FL=12
-  [ -z "$RAW" ] || [ "$RAW" = "0" ] && RAW=$(( $(cat /sys/class/backlight/max77696-bl/max_brightness 2>/dev/null || echo 2000) / 2 ))
-  lipc-set-prop com.lab126.powerd flIntensity "$FL" 2>/dev/null
-  sleep 1
-  # if powerd did not switch it on (GUI is stopped), set the hardware directly
-  CUR=$(cat "$BL" 2>/dev/null)
-  if [ -w "$BL" ] && [ "${CUR:-0}" = "0" ]; then echo "$RAW" > "$BL"; fi
-  echo "light on: fl=$FL raw=$RAW now=$(cat "$BL" 2>/dev/null)"
-}
-
 # Power button: toggle the lock screen.
 (
   lua "$DIR/bin/touch.lua" /dev/input/event0 key | while read -r K; do
+    # powerd also sees the power button and goes screensaver -> suspend
+    # (Wi-Fi off, loop frozen). Pull it straight back to "active".
+    P0=$(pd_state)
+    pd_wake
     if [ -f "$LOCKED" ]; then
       rm -f "$LOCKED"; light_on
     else
       touch "$LOCKED"; : > "$STATE"; light_off
     fi
-    echo "power: locked=$([ -f "$LOCKED" ] && echo 1 || echo 0) light=$(cat /tmp/kiddash.fl 2>/dev/null)"
+    echo "power $(date +%T): locked=$([ -f "$LOCKED" ] && echo 1 || echo 0) light=$(cur_light) powerd=$P0->$(pd_state)"
     show full
   done
 ) &
@@ -142,6 +172,11 @@ while true; do
   if [ -s "$STATE" ]; then
     LT=$(cat "$LASTTAP" 2>/dev/null || echo 0)
     [ $(( $(date +%s) - LT )) -gt 240 ] && : > "$STATE"
+  fi
+  # Safety net: if powerd left "active" anyway, log it and wake it.
+  PS=$(pd_state)
+  if [ -n "$PS" ] && [ "$PS" != "active" ]; then
+    echo "powerd $(date +%T): $PS -> wake"; pd_wake
   fi
   show
   rc=$?
