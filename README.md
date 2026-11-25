@@ -24,6 +24,7 @@ On the web dashboard:
 - Edit habits, events, and the configuration.
 - Statistics per habit and per time of day.
 - Start or stop the Kindle display remotely.
+- See when the Kindle last checked in, its WLAN name, battery, and approximate place on a map, in the dashboard's Kindle tab. The screen does not show it. The place comes from Cloudflare's IP geolocation, so it is accurate only to the city. The record updates at most every 10 minutes, or at once when the WLAN or city changes.
 
 ## Architecture
 
@@ -84,6 +85,7 @@ A Cloudflare Worker on the free plan. The free plan allows 10 ms of CPU per requ
 | `public/index.html` | Web dashboard for parents (static asset). |
 | `tools/bench.mjs` | Local timing test for rendering and encoding. |
 | `tools/test_access.mjs` | 12 local test cases for the Access JWT check. |
+| `tools/test_seen.mjs` | Local checks for the "last seen" record and its write limit. |
 | `tools/test_render.mjs` | Local checks for emoji text, the time steppers, and the empty day hint. |
 
 Routes:

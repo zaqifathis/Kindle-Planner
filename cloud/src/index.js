@@ -277,6 +277,21 @@ function readWifi(url) {
   return { ssid, sig: (url.searchParams.get("wq") || "").replace(/[^0-9/]/g, "").slice(0, 7) };
 }
 
+// Last contact, WLAN name, and the approximate place (Cloudflare's IP geolocation) of the Kindle.
+// Kept in its own KV key so the minute poll never rewrites the main data.
+const SEEN_KEY = "seen";
+const SEEN_EVERY = 600; // shortcut: "last seen" is up to 10 min old, to stay under the free plan's 1000 KV writes a day
+async function noteSeen(env, request, url, bat) {
+  const cf = request.cf || {}, { ssid, sig } = readWifi(url), at = Math.floor(Date.now() / 1000);
+  const old = await env.KV.get(SEEN_KEY, "json");
+  if (old && at - old.at < SEEN_EVERY && old.ssid === ssid && old.city === (cf.city || "")) return;
+  const lat = +cf.latitude, lon = +cf.longitude;
+  await env.KV.put(SEEN_KEY, JSON.stringify({
+    at, ssid, sig, bat, city: cf.city || "", region: cf.region || "", country: cf.country || "",
+    lat: Number.isFinite(lat) ? lat : null, lon: Number.isFinite(lon) ? lon : null,
+  }));
+}
+
 function applyAction(action, st, data, now, fl = 12) {
   if (!action) return { st, write: false };
   const [kind, rest] = action.split(/:(.*)/s);
@@ -598,6 +613,7 @@ export default {
           : { m: "h", v: ["day", "week", "month"].includes(v) ? v : "day" };
       }
       if (changed) ctx.waitUntil(save(env, data));
+      if (fromKindle) ctx.waitUntil(noteSeen(env, request, url, bat));
       const bytes = renderPage(kind, data, st, { now, loc, wx, battery: bat, fl: readFl(url), wifi: readWifi(url) });
       return png(bytes, fromKindle ? { "X-Kindle-Command": data.kindle_command || "run" } : {});
     }
@@ -637,6 +653,7 @@ export default {
         events: data.events, upcoming: [0, 1, 2, 3, 4, 5, 6].flatMap((i) => eventsOn(data, addDays(now.date, i)).map((e) => ({ ...e, on: iso(addDays(now.date, i)) }))),
         child_name: data.child_name || "", lock_name: data.lock_name || "",
         kindle_command: data.kindle_command || "run", weather: wx, city: loc.city || "",
+        seen: await env.KV.get(SEEN_KEY, "json"),
       });
     }
     if (path === "/api/stats" && request.method === "GET") return json(stats(data, now));
