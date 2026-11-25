@@ -89,6 +89,7 @@ Routes:
 |-------|--------|---------|
 | `GET /kindle/command` | Kindle | Returns `run` or `stop`. |
 | `GET /dashboard.png` | Kindle | Current page. Query: `bat`, `lock`, `s` (UI state), `fl` (light level). |
+| `GET /kindle/wait` | Kindle | Long poll (up to 25 s) for family replies from Telegram. Returns `new`, `none`, or `off`. |
 | `GET /tap` | Kindle | Resolves a tap at `x`,`y` and returns the new UI state. Can set the light with the `X-Kindle-Light` header. |
 | `GET /page.png?view=...` | Browser | Preview of a Kindle page. |
 | `GET /api/state`, `GET /api/stats` | Browser | Data and statistics. |

@@ -4,7 +4,7 @@
 // so switching tabs and typing do not write to KV.
 import {
   renderBody, renderLock, renderCompose, renderLight, composeDefaults, drawHeader, FL_MAX, MSG_MAX,
-  habitsOn, isDone, unread, progress, eventsOn, localNow, iso, parseDate, addDays, weekday, periodIndex,
+  habitsOn, isDone, unread, recentMessages, progress, eventsOn, localNow, iso, parseDate, addDays, weekday, periodIndex,
   PERIODS, ALL_DAYS, W, H, SPLIT,
 } from "./render.js";
 import { encodeRows, assemblePNG } from "./png.js";
@@ -93,6 +93,7 @@ async function load(env, ctx) {
 }
 
 async function save(env, data) {
+  data.messages = recentMessages(data); // chat history: last 7 days only
   const keys = Object.keys(data.done).sort();
   for (const k of keys.slice(0, Math.max(0, keys.length - 120))) delete data.done[k];
   await env.KV.put(KEY, JSON.stringify(data));
@@ -219,30 +220,32 @@ async function sendTelegram(env, text) {
   }
 }
 
-// Replies: the Worker polls getUpdates (no webhook, so Cloudflare Access needs no exception).
-// With the bot's privacy mode on, it only gets replies to its own messages and @mentions.
+// Replies: the Kindle holds GET /kindle/wait open and the Worker long-polls getUpdates, so a reply
+// shows within seconds (no webhook, so Cloudflare Access needs no exception).
+// Only /kindle/wait polls: Telegram allows one getUpdates call at a time.
 const MSG_KEEP = 30;
 const GLYPHS_OK = /[^\x20-\x7e\xa0-\xff–—…‘’“”€•·]/gu; // the Kindle font has no emoji
-let LAST_POLL = 0; // shortcut: per isolate, so a few extra polls can happen; fine for one Kindle
 
 function addMessage(data, msg) {
   data.messages = [...(data.messages || []), msg].slice(-MSG_KEEP);
 }
 
-/** Pulls new group messages into data.messages. Returns true when data changed. */
-async function pollTelegram(env, data) {
-  if (!env.TG_TOKEN || !env.TG_CHAT || Date.now() - LAST_POLL < 20_000) return false;
-  LAST_POLL = Date.now();
-  let j;
+/** Waits up to 25 s for Telegram updates. Returns the update list, or null on an error. */
+async function waitTelegram(env, offset) {
   try {
-    const r = await fetch(`https://api.telegram.org/bot${env.TG_TOKEN}/getUpdates?timeout=0&allowed_updates=["message"]&offset=${data.tg_offset || 0}`,
-      { signal: AbortSignal.timeout(3000) });
-    j = await r.json();
+    const r = await fetch(`https://api.telegram.org/bot${env.TG_TOKEN}/getUpdates?timeout=25&allowed_updates=["message"]&offset=${offset}`,
+      { signal: AbortSignal.timeout(35000) });
+    const j = await r.json();
+    return j.ok ? j.result : null;
   } catch {
-    return false;
+    return null;
   }
-  if (!j.ok || !j.result.length) return false;
-  for (const u of j.result) {
+}
+
+/** Adds the group messages among the updates to data.messages. Returns how many it added. */
+function applyUpdates(env, data, updates) {
+  let n = 0;
+  for (const u of updates) {
     data.tg_offset = Math.max(data.tg_offset || 0, u.update_id + 1);
     const m = u.message;
     if (!m || String(m.chat.id) !== String(env.TG_CHAT) || m.from.is_bot) continue;
@@ -251,8 +254,9 @@ async function pollTelegram(env, data) {
     t = t.replace(/\s+/g, " ").replace(GLYPHS_OK, "").trim();
     if (!t) t = m.photo ? "[Foto]" : m.sticker ? "[Sticker]" : m.voice ? "[Sprachnachricht]" : "[Emoji]";
     addMessage(data, { from: String(m.from.first_name || "").slice(0, 30), text: t.slice(0, 300), at: m.date, me: 0 });
+    n++;
   }
-  return true;
+  return n;
 }
 
 const clampFl = (v) => Math.max(0, Math.min(FL_MAX, Math.round(v)));
@@ -377,7 +381,7 @@ function stats(data, now, nDays = 28) {
 //       - browser users: email must be in ALLOWED_EMAILS
 //       - Kindle: service token whose client id equals KINDLE_CLIENT_ID
 //  2. Legacy shared key (only while Access is not configured yet).
-const KINDLE_ROUTES = new Set(["/dashboard.png", "/tap", "/kindle/command"]);
+const KINDLE_ROUTES = new Set(["/dashboard.png", "/tap", "/kindle/command", "/kindle/wait"]);
 
 const b64urlBytes = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(s.length / 4) * 4, "=")), (c) => c.charCodeAt(0));
 const b64urlJson = (s) => JSON.parse(new TextDecoder().decode(b64urlBytes(s)));
@@ -494,6 +498,18 @@ export default {
     // ---- Kindle display
     if (path === "/kindle/command") return text(data.kindle_command || "run");
 
+    // Kindle long poll: "new" (redraw now), "none" (ask again), "off" (wait, then ask again)
+    if (path === "/kindle/wait") {
+      if (!env.TG_TOKEN || !env.TG_CHAT) return text("off");
+      const updates = await waitTelegram(env, data.tg_offset || 0);
+      if (!updates) return text("off");
+      if (!updates.length) return text("none");
+      const fresh = await load(env, ctx); // the wait took up to 25 s: keep changes saved meanwhile
+      const n = applyUpdates(env, fresh, updates);
+      await save(env, fresh);
+      return text(n ? "new" : "none");
+    }
+
     if (path === "/dashboard.png" || path === "/page.png") {
       const fromKindle = path === "/dashboard.png";
       if (fromKindle && request.cf && request.cf.city && (!data.loc || data.loc.city !== loc.city)) {
@@ -501,7 +517,7 @@ export default {
         ctx.waitUntil(save(env, data));
       }
       const wx = await weather(loc, ctx);
-      let changed = fromKindle && (await pollTelegram(env, data));
+      let changed = false;
       const bat = fromKindle ? (url.searchParams.get("bat") || "").replace(/\D/g, "") || null : null;
       let kind, st;
       if (fromKindle) {

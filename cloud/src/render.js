@@ -55,9 +55,14 @@ export function progress(data, day) {
   for (const [p] of PERIODS) for (const h of r[p]) { t++; if (isDone(done, h)) n++; }
   return [n, t];
 }
+/** Messages from the last 7 days; older ones are hidden and dropped on the next save. */
+export function recentMessages(data) {
+  const since = Date.now() / 1000 - 7 * 86400;
+  return (data.messages || []).filter((m) => m.at > since);
+}
 /** Replies from the family that the Kindle page has not shown yet. */
 export function unread(data) {
-  return (data.messages || []).filter((m) => !m.me && m.at > (data.msg_seen || 0));
+  return recentMessages(data).filter((m) => !m.me && m.at > (data.msg_seen || 0));
 }
 export function eventOccurs(e, day) {
   const d = parseDate(e.date);
@@ -506,7 +511,7 @@ function renderMessage(data, st) {
   // history, newest at the bottom; own messages right and gray, replies left and white
   const top = 110, bottom = 476, ts = 32, tlh = 40, bw = 760;
   let y = bottom;
-  const msgs = data.messages || [];
+  const msgs = recentMessages(data);
   if (!msgs.length) g.text(W / 2, (top + bottom) / 2, "Noch keine Nachrichten", 34, false, 150, "mm");
   for (let i = msgs.length - 1; i >= 0 && y > top + 60; i--) {
     const m = msgs[i];

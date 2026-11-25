@@ -39,7 +39,7 @@ done
 
 cleanup() {
   [ -f "$LOCKED" ] && light_on
-  kill $TOUCH_PID $KEY_PID 2>/dev/null
+  kill $TOUCH_PID $KEY_PID $WAIT_PID 2>/dev/null
   killall lua 2>/dev/null
   lipc-set-prop com.lab126.powerd preventScreenSaver 0
   rm -f /tmp/kiddash.pid
@@ -164,6 +164,19 @@ TOUCH_PID=$!
   done
 ) &
 KEY_PID=$!
+
+# Messages: keep one request open; the server answers "new" as soon as a family reply arrives.
+(
+  while true; do
+    R=$($CURL -m 40 "$SERVER/kindle/wait" 2>/dev/null)
+    case "$R" in
+      new) show ;;
+      none) ;;
+      *) sleep 30 ;;  # Telegram not set up, server error, or no network
+    esac
+  done
+) &
+WAIT_PID=$!
 trap cleanup USR1
 
 fails=0
