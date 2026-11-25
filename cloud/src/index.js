@@ -92,10 +92,9 @@ async function load(env, ctx) {
   return data;
 }
 
+// The full tick history is kept (about 25 KB per year), so it can be exported and charted later.
 async function save(env, data) {
   data.messages = recentMessages(data); // chat history: last 7 days only
-  const keys = Object.keys(data.done).sort();
-  for (const k of keys.slice(0, Math.max(0, keys.length - 120))) delete data.done[k];
   await env.KV.put(KEY, JSON.stringify(data));
 }
 
@@ -370,7 +369,47 @@ function stats(data, now, nDays = 28) {
     perfect_days: days.filter((d) => d.total && d.done === d.total).length,
     periods: perPeriod.map((p) => ({ ...p, rate: p.total ? p.done / p.total : 0 })),
     habits: habitsList.sort((a, b) => b.rate - a.rate),
+    history: history(data, now, 371),
   };
+}
+
+/** First day with any tick, or today. */
+function firstDay(data, now) {
+  const k = Object.keys(data.done).filter((d) => (data.done[d] || []).length).sort()[0];
+  return (k && parseDate(k)) || now.date;
+}
+
+/** One entry per day from the first recorded day (at most maxDays back) to today.
+ *  shortcut: past days are scored against today's habit schedule; snapshot the schedule if habits change often. */
+function history(data, now, maxDays) {
+  const out = [];
+  const start = firstDay(data, now), first = addDays(now.date, -(maxDays - 1));
+  for (let day = start > first ? start : first; day <= now.date; day = addDays(day, 1)) {
+    const [done, total] = progress(data, day);
+    out.push({ date: iso(day), weekday: weekday(day), done, total });
+  }
+  return out;
+}
+
+const csvCell = (v) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+
+/** One row per scheduled habit per day, plus ticks of habits that were deleted since. */
+function exportCsv(data, now) {
+  const rows = [["date", "weekday", "period", "habit", "habit_id", "done"]];
+  const archived = new Map((data.habits_archive || []).map((h) => [h.id, h]));
+  for (let day = firstDay(data, now); day <= now.date; day = addDays(day, 1)) {
+    const date = iso(day), done = new Set(data.done[date] || []), seen = new Set();
+    const r = habitsOn(data, day);
+    for (const [p] of PERIODS) for (const h of r[p]) {
+      [h.id, ...(h.alias || [])].forEach((x) => seen.add(x));
+      rows.push([date, weekday(day), p, h.title, h.id, isDone(done, h) ? 1 : 0]);
+    }
+    for (const id of done) if (!seen.has(id)) {
+      const a = archived.get(id);
+      rows.push([date, weekday(day), a ? a.period : "", a ? a.title : "(deleted habit)", id, 1]);
+    }
+  }
+  return rows.map((row) => row.map(csvCell).join(",")).join("\r\n") + "\r\n";
 }
 
 // ------------------------------------------------------------------ auth
@@ -573,6 +612,16 @@ export default {
       });
     }
     if (path === "/api/stats" && request.method === "GET") return json(stats(data, now));
+    if (path === "/api/export" && request.method === "GET") {
+      const csv = url.searchParams.get("format") === "csv";
+      const name = `kid-planner-${today}.${csv ? "csv" : "json"}`;
+      return new Response(csv ? exportCsv(data, now) : JSON.stringify(data, null, 2), {
+        headers: {
+          ...SEC, "Content-Type": csv ? "text/csv; charset=utf-8" : "application/json",
+          "Content-Disposition": `attachment; filename="${name}"`,
+        },
+      });
+    }
 
     if (request.method === "POST" && path.startsWith("/api/")) {
       // JSON only: plain HTML forms from other sites cannot send this content type
@@ -609,7 +658,11 @@ export default {
         if (j >= 0 && j < list.length) [list[f[1]], list[j]] = [list[j], list[f[1]]];
       } else if (path === "/api/habit/delete") {
         const f = findHabit(b.id);
-        if (f) data.habits[f[0]].splice(f[1], 1);
+        if (f) {
+          const [h] = data.habits[f[0]].splice(f[1], 1);
+          // keep the name, so old ticks still have a title in exports
+          (data.habits_archive ||= []).push({ id: h.id, title: h.title, period: f[0], alias: h.alias || [] });
+        }
       } else if (path === "/api/event" || path === "/api/event/update") {
         if (!parseDate(b.date)) return json({ error: "bad date" }, 400);
         const repeat = ["none", "daily", "days"].includes(b.repeat) ? b.repeat : "none";

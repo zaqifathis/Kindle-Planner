@@ -30,11 +30,18 @@ h3{font-weight:600;font-size:22px;margin:0 0 12px}
 nav.top{position:sticky;top:0;z-index:5;background:var(--yellow);border-bottom:1.5px solid var(--ink)}
 nav.top .wrap{display:flex;align-items:center;gap:22px;height:52px}
 nav.top .logo{font-weight:700;font-size:21px;text-decoration:none;margin-right:auto}
-nav.top a.link{font-size:15px;text-decoration:none}
-nav.top a.link:hover{text-decoration:underline}
+nav.top .tabs{display:flex;gap:4px}
+nav.top a.link{font-size:15px;text-decoration:none;padding:5px 13px;border-radius:999px;border:1.5px solid transparent;white-space:nowrap}
+nav.top a.link:hover{border-color:var(--ink)}
+nav.top a.link[aria-current=page]{background:var(--ink);color:var(--yellow);font-weight:600}
 nav.top .lang{background:#fff}
 nav.top .lang button{padding:3px 11px;font-size:14px}
-@media (max-width:760px){nav.top a.link{display:none}}
+@media (max-width:760px){
+  nav.top .wrap{flex-wrap:wrap;height:auto;padding-top:8px;padding-bottom:8px;row-gap:8px}
+  nav.top .tabs{order:3;flex:1 0 100%;overflow-x:auto;scrollbar-width:none;margin:0 -28px;padding:0 28px}
+}
+[data-page]{scroll-margin-top:110px}
+section.band.page-main{min-height:calc(100svh - 52px)}
 
 /* hero */
 .hero{background:var(--pink);padding:40px 0 48px;border-bottom:1.5px solid var(--ink)}
@@ -71,6 +78,37 @@ nav.top .lang button{padding:3px 11px;font-size:14px}
 .hbar .fill{height:100%;background:var(--white);border-radius:7px}
 .hbar .p{text-align:right;font-variant-numeric:tabular-nums}
 .tip{position:fixed;pointer-events:none;background:var(--ink);color:#fff;padding:8px 12px;border-radius:12px;font-size:14px;z-index:20;opacity:0;transition:opacity .1s;max-width:240px}
+.two.rev{grid-template-columns:1.4fr 1fr}
+@media (max-width:860px){.two.rev{grid-template-columns:1fr}}
+.stats .head-row{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px 24px;margin-bottom:28px}
+.stats .head-row h2{margin:0}
+.stats .btn{background:transparent;color:#fff;border-color:#fff;text-decoration:none;display:inline-block}
+.stats .btn:hover{background:#fff;color:var(--green-deep)}
+.export{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:15px}
+/* year heatmap */
+.heat-scroll{overflow-x:auto;margin-top:16px;padding-bottom:8px;scrollbar-color:rgba(255,255,255,.4) transparent}
+.heat{display:inline-grid;grid-template-columns:max-content max-content;gap:4px 8px;font-size:12px}
+.heat-months{grid-column:2;display:grid;grid-template-columns:repeat(53,13px);gap:3px;height:16px}
+.heat-months span{white-space:nowrap;opacity:.85}
+.heat-days{display:grid;grid-template-rows:repeat(7,13px);gap:3px;line-height:13px;opacity:.85}
+.heat-grid{display:grid;grid-template-rows:repeat(7,13px);grid-auto-flow:column;grid-auto-columns:13px;gap:3px}
+.heat .c,.heat-legend .c{border-radius:3px;background:rgba(255,255,255,.07)}
+.heat .c.l0,.heat-legend .c.l0{background:rgba(255,255,255,.2)}
+.heat .c.l1,.heat-legend .c.l1{background:rgba(255,255,255,.42)}
+.heat .c.l2,.heat-legend .c.l2{background:rgba(255,255,255,.62)}
+.heat .c.l3,.heat-legend .c.l3{background:rgba(255,255,255,.82)}
+.heat .c.l4,.heat-legend .c.l4{background:#fff}
+.heat .c.is-today{outline:2px solid var(--yellow);outline-offset:1px}
+.heat-legend{display:flex;align-items:center;gap:4px;font-size:13px;margin-top:8px;opacity:.95;flex-wrap:wrap}
+.heat-legend .c{width:13px;height:13px;display:inline-block}
+.heat-legend .gap{width:14px}
+/* weekly trend */
+.trend{margin-top:10px;position:relative}
+.trend svg{display:block;width:100%;overflow:visible}
+.trend .grid line{stroke:rgba(255,255,255,.2);stroke-width:1}
+.trend text{fill:#fff;opacity:.85;font:500 12px "Fredoka",system-ui,sans-serif}
+.trend .hit{fill:transparent;cursor:default}
+.trend .cross{stroke:rgba(255,255,255,.55);stroke-width:1}
 details.table{margin-top:10px}
 details.table summary{cursor:pointer;font-size:14px;opacity:.9}
 details.table table{width:100%;border-collapse:collapse;font-size:14px;margin-top:8px}
@@ -148,19 +186,21 @@ footer{padding:30px 0 50px;color:var(--muted);font-size:14px}
 <body>
 <nav class="top" aria-label="Sections">
   <div class="wrap">
-    <a class="logo" href="#top" id="logo">kid planner</a>
-    <a class="link" href="#stats" data-i18n="nav.stats">Stats</a>
-    <a class="link" href="#today" data-i18n="nav.today">Today</a>
-    <a class="link" href="#habits" data-i18n="nav.habits">Habits</a>
-    <a class="link" href="#events" data-i18n="nav.events">Events</a>
-    <a class="link" href="#kindle" data-i18n="nav.kindle">Kindle</a>
+    <a class="logo" href="#overview" id="logo">kid planner</a>
+    <div class="tabs">
+      <a class="link" href="#overview" data-i18n="nav.overview">Overview</a>
+      <a class="link" href="#analysis" data-i18n="nav.analysis">Analysis</a>
+      <a class="link" href="#habits" data-i18n="nav.habits">Habits</a>
+      <a class="link" href="#events" data-i18n="nav.events">Events</a>
+      <a class="link" href="#kindle" data-i18n="nav.kindle">Kindle</a>
+    </div>
     <div class="seg lang" id="lang" role="group" aria-label="Language / Sprache">
       <button type="button" data-l="en" lang="en">EN</button><button type="button" data-l="de" lang="de">DE</button>
     </div>
   </div>
 </nav>
 
-<header class="hero" id="top">
+<header class="hero" id="top" data-page="overview">
   <div class="wrap">
     <h1 class="name" id="hero-name">Planner</h1>
     <div class="row">
@@ -170,15 +210,40 @@ footer{padding:30px 0 50px;color:var(--muted);font-size:14px}
   </div>
 </header>
 
-<section class="band stats" id="stats">
+<section class="band stats page-main" id="stats" data-page="analysis">
   <div class="wrap">
     <p class="kicker" data-i18n="stats.kicker">Command center</p>
-    <h2 data-i18n="stats.title">How it's going</h2>
+    <div class="head-row">
+      <h2 data-i18n="stats.title">How it's going</h2>
+      <div class="export">
+        <span data-i18n="stats.download">Download all data:</span>
+        <a class="btn" href="/api/export?format=csv" download data-i18n="stats.csv">Spreadsheet (CSV)</a>
+        <a class="btn" href="/api/export?format=json" download data-i18n="stats.json">Backup (JSON)</a>
+      </div>
+    </div>
     <div class="tiles">
       <div class="tile"><div class="v" id="s-today">–</div><div class="l" data-i18n="stats.today">today</div></div>
       <div class="tile"><div class="v" id="s-week">–</div><div class="l" data-i18n="stats.week">last 7 days</div></div>
       <div class="tile"><div class="v" id="s-streak">–</div><div class="l"><span data-i18n="stats.streak">perfect-day streak</span> <span id="s-best"></span></div></div>
       <div class="tile"><div class="v" id="s-perfect">–</div><div class="l" data-i18n="stats.perfect">perfect days (4 weeks)</div></div>
+    </div>
+    <div class="chart-card">
+      <div class="head"><h3 data-i18n="stats.year">Every day this year</h3><small id="heat-note"></small></div>
+      <div class="heat-scroll" id="heat-scroll"><div class="heat" id="heat" role="img"></div></div>
+      <div class="heat-legend" aria-hidden="true">
+        <span data-i18n="stats.less">Less</span><i class="c l0"></i><i class="c l1"></i><i class="c l2"></i><i class="c l3"></i><i class="c l4"></i><span data-i18n="stats.more">More</span>
+        <span class="gap"></span><i class="c"></i><span data-i18n="stats.noDataShort">no data</span>
+      </div>
+    </div>
+    <div class="two rev">
+      <div class="chart-card">
+        <div class="head"><h3 data-i18n="stats.trend">Progress week by week</h3><small id="trend-note"></small></div>
+        <div class="trend" id="trend"></div>
+      </div>
+      <div class="chart-card">
+        <div class="head"><h3 data-i18n="stats.byWeekday">By weekday</h3><small id="wd-note"></small></div>
+        <div id="weekdaybars" style="margin-top:12px"></div>
+      </div>
     </div>
     <div class="chart-card">
       <div class="head"><h3 data-i18n="stats.perDay">Habits done per day</h3><small data-i18n="stats.perDayNote">Last 4 weeks · yellow = today</small></div>
@@ -199,7 +264,7 @@ footer{padding:30px 0 50px;color:var(--muted);font-size:14px}
   </div>
 </section>
 
-<section class="band today" id="today">
+<section class="band today" id="today" data-page="overview">
   <div class="wrap">
     <p class="kicker" id="today-kicker"></p>
     <h2 data-i18n="today.title">Today's checklist</h2>
@@ -207,7 +272,7 @@ footer{padding:30px 0 50px;color:var(--muted);font-size:14px}
   </div>
 </section>
 
-<section class="band habits" id="habits">
+<section class="band habits page-main" id="habits" data-page="habits">
   <div class="wrap">
     <p class="kicker" data-i18n="habits.kicker">Routine</p>
     <h2 data-i18n="habits.title">Habits &amp; activities</h2>
@@ -217,7 +282,7 @@ footer{padding:30px 0 50px;color:var(--muted);font-size:14px}
   </div>
 </section>
 
-<section class="band events" id="events">
+<section class="band events page-main" id="events" data-page="events">
   <div class="wrap">
     <p class="kicker" data-i18n="ev.kicker">Calendar</p>
     <h2 data-i18n="ev.title">Events</h2>
@@ -243,7 +308,7 @@ footer{padding:30px 0 50px;color:var(--muted);font-size:14px}
   </div>
 </section>
 
-<section class="band kindle" id="kindle">
+<section class="band kindle page-main" id="kindle" data-page="kindle">
   <div class="wrap kgrid">
     <div>
       <div class="ktabs" id="ktabs">
@@ -278,13 +343,20 @@ const $ = (id) => document.getElementById(id);
 // ---------------------------------------------------------------- language
 const I18N = {
   en: {
-    "nav.stats": "Stats", "nav.today": "Today", "nav.habits": "Habits", "nav.events": "Events", "nav.kindle": "Kindle",
+    "nav.overview": "Overview", "nav.analysis": "Analysis", "nav.habits": "Habits", "nav.events": "Events", "nav.kindle": "Kindle",
     loading: "Loading…", planner: "Planner", plannerOf: (n) => n + "'s planner", kidPlanner: "kid planner", docTitle: (n) => n ? n + "'s Planner" : "Planner",
     doneToday: "done today", allDone: "all done today!",
     "stats.kicker": "Command center", "stats.title": "How it's going", "stats.today": "today", "stats.week": "last 7 days",
     "stats.streak": "perfect-day streak", "stats.perfect": "perfect days (4 weeks)", "stats.perDay": "Habits done per day",
     "stats.perDayNote": "Last 4 weeks · yellow = today", "stats.chartAria": "Daily completion chart", "stats.table": "Show as table",
-    "stats.byPeriod": "By time of day", "stats.4w": "4 weeks", "stats.byHabit": "Each habit", "stats.4wBest": "4 weeks · best first",
+    "stats.byPeriod": "By time of day", "stats.4w": "4 weeks",
+    "stats.download": "Download all data:", "stats.csv": "Spreadsheet (CSV)", "stats.json": "Backup (JSON)",
+    "stats.year": "Every day this year", "stats.less": "Less", "stats.more": "More", "stats.noDataShort": "no data",
+    "stats.trend": "Progress week by week", "stats.byWeekday": "By weekday",
+    heatNote: (n) => `${n} day${n === 1 ? "" : "s"} recorded · ring = today`, heatAria: (n, r) => `Calendar heatmap of ${n} recorded days, ${r} of habits done`,
+    noDataDay: "No data", nothingDue: "Nothing planned", weekOf: (d) => "Week of " + d, soFar: "so far",
+    vsLast: (p) => (p >= 0 ? "+" : "−") + Math.abs(p) + " points vs last week", sinceStart: (n) => `since the start · ${n} weeks`,
+    needWeeks: "The line appears after 2 weeks of ticks.", trendAria: (a, b, n) => `Weekly completion over ${n} weeks, from ${a} to ${b}`, "stats.byHabit": "Each habit", "stats.4wBest": "4 weeks · best first",
     days: (n) => n + (n === 1 ? " day" : " days"), best: (n) => `(best ${n})`,
     "th.day": "Day", "th.done": "Done", "th.rate": "Rate",
     ofN: (a, b) => `${a} of ${b}`, ofHabits: (a, b) => `${a} of ${b} habits`, ofDays: (a, b) => `${a} of ${b} days`,
@@ -313,14 +385,21 @@ const I18N = {
     noAccess: "This account has no access to the planner.", noAccess2: "and sign in with an allowed Google account.",
   },
   de: {
-    "nav.stats": "Statistik", "nav.today": "Heute", "nav.habits": "Gewohnheiten", "nav.events": "Termine", "nav.kindle": "Kindle",
+    "nav.overview": "Übersicht", "nav.analysis": "Auswertung", "nav.habits": "Gewohnheiten", "nav.events": "Termine", "nav.kindle": "Kindle",
     loading: "Lädt…", planner: "Planer", plannerOf: (n) => n + (/[sxzß]$/i.test(n) ? "' " : "s ") + "Planer", kidPlanner: "Kinderplaner",
     docTitle: (n) => n ? n + (/[sxzß]$/i.test(n) ? "' " : "s ") + "Planer" : "Planer",
     doneToday: "heute erledigt", allDone: "heute alles erledigt!",
     "stats.kicker": "Kommandozentrale", "stats.title": "So läuft es", "stats.today": "heute", "stats.week": "letzte 7 Tage",
     "stats.streak": "Serie perfekter Tage", "stats.perfect": "perfekte Tage (4 Wochen)", "stats.perDay": "Erledigte Gewohnheiten pro Tag",
     "stats.perDayNote": "Letzte 4 Wochen · gelb = heute", "stats.chartAria": "Diagramm der täglichen Erledigung", "stats.table": "Als Tabelle zeigen",
-    "stats.byPeriod": "Nach Tageszeit", "stats.4w": "4 Wochen", "stats.byHabit": "Jede Gewohnheit", "stats.4wBest": "4 Wochen · beste zuerst",
+    "stats.byPeriod": "Nach Tageszeit", "stats.4w": "4 Wochen",
+    "stats.download": "Alle Daten herunterladen:", "stats.csv": "Tabelle (CSV)", "stats.json": "Sicherung (JSON)",
+    "stats.year": "Jeder Tag dieses Jahr", "stats.less": "Weniger", "stats.more": "Mehr", "stats.noDataShort": "keine Daten",
+    "stats.trend": "Fortschritt pro Woche", "stats.byWeekday": "Nach Wochentag",
+    heatNote: (n) => `${n} ${n === 1 ? "Tag" : "Tage"} erfasst · Ring = heute`, heatAria: (n, r) => `Kalender-Heatmap über ${n} erfasste Tage, ${r} der Gewohnheiten erledigt`,
+    noDataDay: "Keine Daten", nothingDue: "Nichts geplant", weekOf: (d) => "Woche ab " + d, soFar: "bisher",
+    vsLast: (p) => (p >= 0 ? "+" : "−") + Math.abs(p) + " Punkte zur Vorwoche", sinceStart: (n) => `seit Beginn · ${n} Wochen`,
+    needWeeks: "Die Linie erscheint nach 2 Wochen mit Häkchen.", trendAria: (a, b, n) => `Wöchentliche Erledigung über ${n} Wochen, von ${a} bis ${b}`, "stats.byHabit": "Jede Gewohnheit", "stats.4wBest": "4 Wochen · beste zuerst",
     days: (n) => n + (n === 1 ? " Tag" : " Tage"), best: (n) => `(Rekord ${n})`,
     "th.day": "Tag", "th.done": "Erledigt", "th.rate": "Quote",
     ofN: (a, b) => `${a} von ${b}`, ofHabits: (a, b) => `${a} von ${b} Gewohnheiten`, ofDays: (a, b) => `${a} von ${b} Tagen`,
@@ -371,6 +450,20 @@ $("lang").onclick = (e) => {
   applyStatic(); if (S) renderAll();
 };
 applyStatic();
+
+// ---------------------------------------------------------------- pages (one tab per hash)
+function showPage() {
+  const want = location.hash.slice(1);
+  const page = document.querySelector(`[data-page="${CSS.escape(want)}"]`) ? want : "overview";
+  for (const e of document.querySelectorAll("[data-page]")) e.hidden = e.dataset.page !== page;
+  for (const a of document.querySelectorAll("nav.top a.link")) {
+    if (a.hash === "#" + page) { a.setAttribute("aria-current", "page"); a.scrollIntoView({ block: "nearest", inline: "nearest" }); }
+    else a.removeAttribute("aria-current");
+  }
+  window.scrollTo({ top: 0, behavior: "instant" });
+}
+addEventListener("hashchange", showPage);
+showPage();
 
 const PERIODS = ["morning", "afternoon", "night"];
 const pLabel = (p) => t("p." + p);
@@ -467,12 +560,132 @@ function renderStats() {
     table.append(el("tr", {}, el("td", {}, fmtDate(d.date, { weekday: "short", day: "numeric", month: "short" })), el("td", {}, `${d.done}/${d.total}`), el("td", {}, pct(rate))));
   });
 
+  renderHeat(); renderTrend(); renderWeekdays();
+
   const pb = $("periodbars"); pb.replaceChildren();
   ST.periods.forEach((p, i) => pb.append(hbar(pLabel(PERIODS[i]), p.rate, t("ofN", p.done, p.total))));
   const hb = $("habitbars"); hb.replaceChildren();
   if (!ST.habits.length) hb.append(el("p", {}, t("noData")));
   ST.habits.forEach((h) => hb.append(hbar(h.title, h.rate, t("ofDays", h.done, h.total))));
 }
+// ---- history charts (ST.history: one entry per recorded day, oldest first)
+const UTC = (s) => new Date(s + "T00:00:00Z");
+const isoOf = (d) => d.toISOString().slice(0, 10);
+const mon0 = (d) => (d.getUTCDay() + 6) % 7;
+const fmtUTC = (d, o) => d.toLocaleDateString(LOCALE(), { ...o, timeZone: "UTC" });
+const tipOn = (node, sel) => {
+  node.addEventListener("mouseover", (e) => { const c = e.target.closest(sel); if (c && c.dataset.tip) showTip(e, c.dataset.tip); });
+  node.addEventListener("mousemove", (e) => { if (e.target.closest(sel)) moveTip(e); });
+  node.addEventListener("mouseleave", hideTip);
+};
+
+function renderHeat() {
+  const box = $("heat"); box.replaceChildren();
+  const byDate = new Map(ST.history.map((d) => [d.date, d]));
+  const end = UTC(S.today), start = new Date(end);
+  start.setUTCDate(end.getUTCDate() - mon0(end) - 52 * 7);
+  const months = el("div", { class: "heat-months", "aria-hidden": "true" });
+  const grid = el("div", { class: "heat-grid" });
+  let col = -1, lastM = -1, lastLabel = -9;
+  for (const d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+    if (mon0(d) === 0) {
+      col++;
+      if (d.getUTCMonth() !== lastM) {
+        lastM = d.getUTCMonth();
+        if (col - lastLabel >= 3) { months.append(el("span", { style: `grid-column:${col + 1}` }, fmtUTC(d, { month: "short" }))); lastLabel = col; }
+      }
+    }
+    const k = isoOf(d), h = byDate.get(k), day = fmtUTC(d, { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+    let cls = "c", tipText = `<b>${day}</b><br>${t("noDataDay")}`;
+    if (h && h.total) {
+      const rate = h.done / h.total;
+      cls += " l" + (h.done ? Math.ceil(rate * 4) : 0);
+      tipText = `<b>${day}</b><br>${t("ofHabits", h.done, h.total)} · ${pct(rate)}`;
+    } else if (h) tipText = `<b>${day}</b><br>${t("nothingDue")}`;
+    if (k === S.today) cls += " is-today";
+    grid.append(el("i", { class: cls, "data-tip": tipText }));
+  }
+  const dl = t("dayShort");
+  const days = el("div", { class: "heat-days", "aria-hidden": "true" }, ...dl.map((n, i) => el("span", {}, i % 2 === 0 ? n : "")));
+  box.append(months, days, grid);
+  tipOn(grid, ".c");
+  const [dn, tt] = ST.history.reduce((a, d) => [a[0] + d.done, a[1] + d.total], [0, 0]);
+  box.setAttribute("aria-label", t("heatAria", ST.history.length, pct(tt ? dn / tt : 0)));
+  $("heat-note").textContent = t("heatNote", ST.history.length);
+  const sc = $("heat-scroll"); requestAnimationFrame(() => { sc.scrollLeft = sc.scrollWidth; });
+}
+
+function weeks() {
+  const m = new Map();
+  for (const d of ST.history.slice(0, -1)) { // today is not finished yet
+    const s = UTC(d.date); s.setUTCDate(s.getUTCDate() - mon0(s));
+    const k = isoOf(s), w = m.get(k) || { start: k, done: 0, total: 0 };
+    w.done += d.done; w.total += d.total; m.set(k, w);
+  }
+  return [...m.values()].filter((w) => w.total).map((w) => ({ ...w, rate: w.done / w.total }));
+}
+
+function renderTrend() {
+  const box = $("trend"); box.replaceChildren(); hideTip();
+  const all = weeks(), ws = all.slice(-26), n = ws.length;
+  const note = $("trend-note");
+  if (n < 2) { note.textContent = ""; box.append(el("p", {}, t("needWeeks"))); return; }
+  const cur = ws[n - 1], prev = ws[n - 2];
+  note.textContent = t("vsLast", Math.round((cur.rate - prev.rate) * 100));
+  const W = Math.max(280, box.clientWidth || 640), H = 230, L = 40, R = 46, T = 14, B = 28;
+  const x = (i) => L + (i * (W - L - R)) / (n - 1), y = (r) => T + (1 - r) * (H - T - B);
+  const NS = "http://www.w3.org/2000/svg";
+  const sv = (tag, a = {}, txt) => { const e = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(a)) e.setAttribute(k, v); if (txt != null) e.textContent = txt; return e; };
+  const svg = sv("svg", { viewBox: `0 0 ${W} ${H}`, height: H, role: "img",
+    "aria-label": t("trendAria", pct(ws[0].rate), pct(cur.rate), n) });
+  const g = sv("g", { class: "grid" });
+  for (const r of [0, 0.5, 1]) {
+    g.append(sv("line", { x1: L, x2: W - R, y1: y(r), y2: y(r) }));
+    svg.append(sv("text", { x: L - 8, y: y(r) + 4, "text-anchor": "end" }, pct(r)));
+  }
+  svg.prepend(g);
+  const step = Math.max(1, Math.ceil(n / Math.floor((W - L - R) / 70)));
+  ws.forEach((w, i) => {
+    if ((n - 1 - i) % step === 0) svg.append(sv("text", { x: x(i), y: H - 6, "text-anchor": "middle" }, fmtUTC(UTC(w.start), { day: "numeric", month: "short" })));
+  });
+  const pts = ws.map((w, i) => `${x(i).toFixed(1)},${y(w.rate).toFixed(1)}`);
+  svg.append(sv("path", { d: `M${pts[0]} L${pts.slice(1).join(" L")} L${x(n - 1)},${y(0)} L${x(0)},${y(0)} Z`, fill: "rgba(255,255,255,.12)" }));
+  svg.append(sv("path", { d: `M${pts.join(" L")}`, fill: "none", stroke: "#fff", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+  svg.append(sv("circle", { cx: x(n - 1), cy: y(cur.rate), r: 5, fill: "var(--yellow)", stroke: "var(--green-deep)", "stroke-width": 2 }));
+  svg.append(sv("text", { x: x(n - 1) + 9, y: y(cur.rate) + 4, style: "font-weight:600;opacity:1" }, pct(cur.rate)));
+  const cross = sv("line", { class: "cross", y1: T, y2: H - B, visibility: "hidden" });
+  const dot = sv("circle", { r: 5, fill: "#fff", stroke: "var(--green-deep)", "stroke-width": 2, visibility: "hidden" });
+  svg.append(cross, dot);
+  const colW = (W - L - R) / (n - 1);
+  ws.forEach((w, i) => {
+    const label = fmtUTC(UTC(w.start), { day: "numeric", month: "short", year: "numeric" });
+    const hit = sv("rect", { class: "hit", x: x(i) - colW / 2, y: T, width: colW, height: H - T - B,
+      "data-tip": `<b>${t("weekOf", label)}</b><br>${t("ofHabits", w.done, w.total)} · ${pct(w.rate)}${i === n - 1 ? " (" + t("soFar") + ")" : ""}` });
+    hit.addEventListener("mouseenter", () => {
+      cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
+      dot.setAttribute("cx", x(i)); dot.setAttribute("cy", y(w.rate)); dot.setAttribute("visibility", "visible");
+    });
+    svg.append(hit);
+  });
+  svg.addEventListener("mouseleave", () => { cross.setAttribute("visibility", "hidden"); dot.setAttribute("visibility", "hidden"); });
+  tipOn(svg, ".hit");
+  box.append(svg);
+}
+
+function renderWeekdays() {
+  const agg = Array.from({ length: 7 }, () => [0, 0]);
+  const past = ST.history.slice(0, -1); // today is not finished yet
+  for (const d of past) { agg[d.weekday][0] += d.done; agg[d.weekday][1] += d.total; }
+  const box = $("weekdaybars"); box.replaceChildren();
+  $("wd-note").textContent = past.length ? t("sinceStart", Math.ceil(past.length / 7)) : "";
+  if (!past.length) { box.append(el("p", {}, t("noData"))); return; }
+  t("dayNames").forEach((name, i) => box.append(hbar(name, agg[i][1] ? agg[i][0] / agg[i][1] : 0, t("ofN", agg[i][0], agg[i][1]))));
+}
+// the Analysis tab has no width while hidden, so draw the line again when it opens
+addEventListener("hashchange", () => { if (location.hash === "#analysis" && ST) { renderTrend(); const sc = $("heat-scroll"); sc.scrollLeft = sc.scrollWidth; } });
+let trendW = 0;
+addEventListener("resize", () => { const w = $("trend").clientWidth; if (ST && w && w !== trendW) { trendW = w; renderTrend(); } });
+
 function hbar(label, rate, detail) {
   const row = el("div", { class: "hbar", tabindex: "0", "aria-label": `${label}: ${pct(rate)}, ${detail}` },
     el("span", { class: "t", title: label }, label),
