@@ -55,6 +55,10 @@ export function progress(data, day) {
   for (const [p] of PERIODS) for (const h of r[p]) { t++; if (isDone(done, h)) n++; }
   return [n, t];
 }
+/** Replies from the family that the Kindle page has not shown yet. */
+export function unread(data) {
+  return (data.messages || []).filter((m) => !m.me && m.at > (data.msg_seen || 0));
+}
 export function eventOccurs(e, day) {
   const d = parseDate(e.date);
   if (!d) return false;
@@ -164,15 +168,26 @@ export function drawHeader(g, data, now, loc, wx, battery) {
 }
 
 // ------------------------------------------------------------ home body
-function drawTabs(c, active) {
+function envelope(g, mx, my, fg, bg) {
+  g.box([mx - 30, my - 20, mx + 30, my + 20], 4, { fill: bg, outline: fg, width: 5 });
+  g.polyline([[mx - 28, my - 17], [mx, my + 4], [mx + 28, my - 17]], 5, fg);
+}
+
+function drawTabs(c, active, news) {
   const g = c.g, gap = 16, x0 = 30, plusW = 110;
-  const tw = Math.floor((W - 2 * x0 - 2 * plusW - 4 * gap) / 3);
+  const tw = Math.floor((W - 2 * x0 - 3 * plusW - 5 * gap) / 3);
   [["day", "Tag"], ["week", "Woche"], ["month", "Monat"]].forEach(([key, label], i) => {
     const bx = x0 + i * (tw + gap), box = [bx, TABS_Y0, bx + tw, TABS_Y1], on = key === active;
     g.box(box, 36, on ? { fill: 0 } : { fill: 255, outline: 0, width: 5 });
     g.text((box[0] + box[2]) / 2, (TABS_Y0 + TABS_Y1) / 2, label, 40, true, on ? 255 : 0, "mm");
     c.zone(box, `view:${key}`);
   });
+  // message button (envelope)
+  const mb = [W - x0 - 3 * plusW - 2 * gap, TABS_Y0, W - x0 - 2 * plusW - 2 * gap, TABS_Y1];
+  // black = unread reply
+  g.box(mb, 36, news ? { fill: 0 } : { fill: 255, outline: 0, width: 5 });
+  envelope(g, (mb[0] + mb[2]) / 2, (mb[1] + mb[3]) / 2, news ? 255 : 0, news ? 0 : 255);
+  c.zone([mb[0] - gap / 2, mb[1] - 10, mb[2] + gap / 2, mb[3] + 10], "message");
   // light button
   const lb = [W - x0 - 2 * plusW - gap, TABS_Y0, W - x0 - plusW - gap, TABS_Y1];
   g.box(lb, 36, { fill: 255, outline: 0, width: 5 });
@@ -196,6 +211,16 @@ function renderDay(c, data, day, now, base = "day", openPick = null) {
     g.text(W - 40, y + 8, "zurück zu heute", 30, false, 0, "ra");
     c.zone([0, y - 10, W, y + 60], "view:day");
     y += 70;
+  }
+  const news = today ? unread(data) : [];
+  if (news.length) {
+    const m = news.at(-1), more = news.length > 1 ? `  (+${news.length - 1})` : "";
+    g.box([30, y, W - 30, y + 70], 18, { fill: 0 });
+    envelope(g, 82, y + 35, 255, 0);
+    const label = `${m.from}: ${m.text}`;
+    g.text(130, y + 35, clip(label, W - 190 - textWidth(more, 30, false), 34, true) + more, 34, true, 255, "lm");
+    c.zone([30, y, W - 30, y + 70], "message");
+    y += 82;
   }
   const evs = eventsOn(data, day).slice(0, 3);
   for (const e of evs) {
@@ -360,7 +385,7 @@ export function renderBody(data, view, now) {
   // a manual choice expires when the time of day moves on, so the current period opens again
   const m = /^([0-2])\.([0-2])$/.exec(pick || "");
   const open = m && +m[2] === periodIndex(now) ? +m[1] : null;
-  drawTabs(c, kind);
+  drawTabs(c, kind, unread(data).length > 0);
   ({ day: renderDay, week: renderWeek, month: renderMonth })[kind](c, data, day, now, base, open);
   return c;
 }
@@ -435,10 +460,10 @@ const KB = [
   ["q", "w", "e", "r", "t", "z", "u", "i", "o", "p", "ü"],
   ["a", "s", "d", "f", "g", "h", "j", "k", "l", "ö", "ä"],
   [["shift", 1.5], "y", "x", "c", "v", "b", "n", "m", "ß", ["back", 1.5]],
-  ["-", "&", ["space", 6], ".", ",", ":"],
+  ["-", "?", "!", ["space", 5], ".", ",", ":"],
 ];
 
-/** Compose state: t=e(vent)|h(abit), s=text, r=once|daily|days, d=day offset, w=weekday bitmask,
+/** Compose state: t=e(vent)|h(abit)|m(essage), s=text, f=1 sent / 2 send failed (message only), r=once|daily|days, d=day offset, w=weekday bitmask,
  *  tm=minutes or -1, p=period, sh=shift */
 export function composeDefaults(now) {
   return { m: "c", t: "e", s: "", r: "once", d: 0, w: 1 << weekday(now.date), tm: -1, p: periodIndex(now), sh: 1 };
@@ -450,7 +475,81 @@ function dayLabel(day, i) {
   return `${DAY_SHORT[weekday(day)]} ${day.getUTCDate()}.`;
 }
 
+export const MSG_MAX = 200;
+
+/** Greedy word wrap; words wider than maxW are broken by character. */
+function wrap(text, maxW, size) {
+  const lines = [];
+  let line = "";
+  for (const word of text.split(" ")) {
+    let w = word;
+    const cand = line ? line + " " + w : w;
+    if (textWidth(cand, size, true) <= maxW) { line = cand; continue; }
+    if (line) lines.push(line);
+    while (textWidth(w, size, true) > maxW) {
+      let n = w.length - 1;
+      while (n > 1 && textWidth(w.slice(0, n), size, true) > maxW) n--;
+      lines.push(w.slice(0, n)); w = w.slice(n);
+    }
+    line = w;
+  }
+  lines.push(line);
+  return lines;
+}
+
+function renderMessage(data, st) {
+  const c = new Canvas();
+  const g = c.g;
+  g.text(40, 24, "Nachrichten", 56, true);
+  g.text(W - 40, 44, "Familie", 32, false, 70, "ra");
+
+  // history, newest at the bottom; own messages right and gray, replies left and white
+  const top = 110, bottom = 476, ts = 32, tlh = 40, bw = 760;
+  let y = bottom;
+  const msgs = data.messages || [];
+  if (!msgs.length) g.text(W / 2, (top + bottom) / 2, "Noch keine Nachrichten", 34, false, 150, "mm");
+  for (let i = msgs.length - 1; i >= 0 && y > top + 60; i--) {
+    const m = msgs[i];
+    let lines = wrap(m.text, bw - 40, ts);
+    const room = Math.floor((y - top - 50) / tlh);
+    if (room < 2) break;
+    if (lines.length > room) lines = ["…", ...lines.slice(-(room - 1))];
+    const h = 44 + lines.length * tlh + 10, w = Math.max(...lines.map((l) => textWidth(l, ts, true)), textWidth(m.from, 24, false)) + 40;
+    const x0 = m.me ? W - 24 - w : 24;
+    y -= h;
+    g.box([x0, y, x0 + w, y + h - 8], 18, m.me ? { fill: 225 } : { fill: 255, outline: 0, width: 3 });
+    g.text(x0 + 20, y + 8, m.from, 24, false, 90);
+    lines.forEach((l, k) => g.text(x0 + 20, y + 44 + k * tlh + tlh / 2 - 4, l, ts, true, 0, "lm"));
+    y -= 6;
+  }
+  g.rect(0, top - 10, W, top, 255); // a cut-off bubble must not reach the title
+
+  const fb = [24, 486, W - 24, 626], size = 36, lh = 48, maxW = fb[2] - fb[0] - 80;
+  g.box(fb, 24, { fill: 255, outline: 0, width: 5 });
+  if (st.s) {
+    const lines = wrap(st.s, maxW, size).slice(-Math.floor((fb[3] - fb[1] - 30) / lh));
+    let ly = fb[1] + 22 + lh / 2, w = 0;
+    for (const l of lines) { w = g.text(fb[0] + 30, ly, l, size, true, 0, "lm"); ly += lh; }
+    ly -= lh;
+    g.rect(fb[0] + 36 + w, ly - 20, fb[0] + 41 + w, ly + 20, 0);
+  } else {
+    const ly = fb[1] + 22 + lh / 2;
+    g.rect(fb[0] + 30, ly - 20, fb[0] + 35, ly + 20, 0);
+    g.text(fb[0] + 52, ly, st.f === 1 ? "Gesendet! Schreib noch eine?" : "Was möchtest du sagen?", 38, false, 150, "lm");
+  }
+  if (st.f === 2) g.text(40, 1240, "Nicht gesendet. Bitte nochmal versuchen.", 34, true, 0, "lm");
+  drawKeyboard(c, st, 644);
+  const by0 = 1300, by1 = 1420;
+  pill(g, [24, by0, 520, by1], "Fertig", 44, false);
+  c.zone([24, by0 - 10, 520, H], "cancel");
+  const can = st.s.trim().length > 0;
+  pill(g, [552, by0, W - 24, by1], "Senden", 44, can, can ? {} : { outline: 170, textColor: 170 });
+  c.zone([552, by0 - 10, W - 24, H], "save");
+  return c;
+}
+
 export function renderCompose(data, st, now) {
+  if (st.t === "m") return renderMessage(data, st);
   const c = new Canvas();
   const g = c.g;
   g.text(40, 24, st.t === "e" ? "Neuer Termin" : "Neue Aufgabe", 56, true);
@@ -532,9 +631,21 @@ export function renderCompose(data, st, now) {
     });
   }
 
-  // keyboard
+  drawKeyboard(c, st);
+
+  // buttons
+  const by0 = 1300, by1 = 1420;
+  pill(g, [24, by0, 520, by1], "Abbrechen", 44, false);
+  c.zone([24, by0 - 10, 520, H], "cancel");
+  const can = st.s.trim().length > 0 && !(st.r === "days" && !st.w);
+  pill(g, [552, by0, W - 24, by1], "Speichern", 44, can, can ? {} : { outline: 170, textColor: 170 });
+  c.zone([552, by0 - 10, W - 24, H], "save");
+  return c;
+}
+
+function drawKeyboard(c, st, ky = 590) {
+  const g = c.g;
   const unit = (W - 48) / 11, kh = 96, gapK = 8;
-  let ky = 590;
   const upper = !!st.sh;
   for (const row of KB) {
     const units = row.reduce((s, k) => s + (Array.isArray(k) ? k[1] : 1), 0);
@@ -564,13 +675,4 @@ export function renderCompose(data, st, now) {
     }
     ky += kh + gapK + 4;
   }
-
-  // buttons
-  const by0 = 1300, by1 = 1420;
-  pill(g, [24, by0, 520, by1], "Abbrechen", 44, false);
-  c.zone([24, by0 - 10, 520, H], "cancel");
-  const can = st.s.trim().length > 0 && !(st.r === "days" && !st.w);
-  pill(g, [552, by0, W - 24, by1], "Speichern", 44, can, can ? {} : { outline: 170, textColor: 170 });
-  c.zone([552, by0 - 10, W - 24, H], "save");
-  return c;
 }

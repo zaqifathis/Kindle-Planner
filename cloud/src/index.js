@@ -3,8 +3,8 @@
 // The Kindle keeps the UI state (tab, add screen, draft text) and sends it as ?s=...,
 // so switching tabs and typing do not write to KV.
 import {
-  renderBody, renderLock, renderCompose, renderLight, composeDefaults, drawHeader, FL_MAX,
-  habitsOn, isDone, progress, eventsOn, localNow, iso, parseDate, addDays, weekday, periodIndex,
+  renderBody, renderLock, renderCompose, renderLight, composeDefaults, drawHeader, FL_MAX, MSG_MAX,
+  habitsOn, isDone, unread, progress, eventsOn, localNow, iso, parseDate, addDays, weekday, periodIndex,
   PERIODS, ALL_DAYS, W, H, SPLIT,
 } from "./render.js";
 import { encodeRows, assemblePNG } from "./png.js";
@@ -27,6 +27,7 @@ function defaultData() {
   const h = (titles, days = ALL_DAYS) => titles.map((title) => ({ id: newId(), title, days: [...days], alias: [] }));
   return {
     version: 4, child_name: "", lock_name: "", events: [], done: {}, kindle_command: "run", loc: null,
+    messages: [], msg_seen: 0, tg_offset: 0,
     habits: {
       morning: h(["Aufstehen & waschen", "Frühstück", "Zähne putzen"]),
       afternoon: h(["Hausaufgaben"], [0, 1, 2, 3, 4]),
@@ -143,11 +144,11 @@ function decodeState(s, now) {
       return { m: "h", v: /^(day|week|month)(:\d{4}-\d{2}-\d{2})?(@[0-2]\.[0-2])?$/.test(v) ? v : "day" };
     }
     const d = composeDefaults(now);
-    const t = st.t === "h" ? "h" : "e";
+    const t = ["h", "m"].includes(st.t) ? st.t : "e";
     let r = ["once", "daily", "days"].includes(st.r) ? st.r : d.r;
     if (t === "h" && r === "once") r = "daily";
     return {
-      m: "c", t, r, s: String(st.s || "").slice(0, 60),
+      m: "c", t, r, s: String(st.s || "").slice(0, t === "m" ? MSG_MAX : 60), f: [1, 2].includes(st.f) ? st.f : 0,
       d: Math.min(6, Math.max(0, st.d | 0)), w: (st.w | 0) & 127,
       tm: Math.min(1439, Math.max(-1, Number.isFinite(st.tm) ? st.tm : -1)),
       p: [0, 1, 2].includes(st.p) ? st.p : d.p, sh: st.sh ? 1 : 0,
@@ -165,7 +166,7 @@ function encodeState(st) {
 }
 
 function body(data, view, now) {
-  const key = `${view}|${iso(now.date)}|${periodIndex(now)}|${data._hash}`;
+  const key = `${view}|${iso(now.date)}|${periodIndex(now)}|${data._hash}|${unread(data).length}`; // polled replies change data after load
   let b = BODY_CACHE.get(key);
   if (!b) {
     const c = renderBody(data, view, now);
@@ -201,6 +202,59 @@ function toggle(data, dateStr, id) {
   data.done[dateStr] = [...done].sort();
 }
 
+// ------------------------------------------------------------------ Telegram (Kindle -> family group)
+// Secrets: TG_TOKEN (from @BotFather), TG_CHAT (group chat id, negative number).
+async function sendTelegram(env, text) {
+  if (!env.TG_TOKEN || !env.TG_CHAT) return false;
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${env.TG_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: env.TG_CHAT, text }),
+      signal: AbortSignal.timeout(7000), // the Kindle gives up on /tap after 10 s
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
+// Replies: the Worker polls getUpdates (no webhook, so Cloudflare Access needs no exception).
+// With the bot's privacy mode on, it only gets replies to its own messages and @mentions.
+const MSG_KEEP = 30;
+const GLYPHS_OK = /[^\x20-\x7e\xa0-\xff–—…‘’“”€•·]/gu; // the Kindle font has no emoji
+let LAST_POLL = 0; // shortcut: per isolate, so a few extra polls can happen; fine for one Kindle
+
+function addMessage(data, msg) {
+  data.messages = [...(data.messages || []), msg].slice(-MSG_KEEP);
+}
+
+/** Pulls new group messages into data.messages. Returns true when data changed. */
+async function pollTelegram(env, data) {
+  if (!env.TG_TOKEN || !env.TG_CHAT || Date.now() - LAST_POLL < 20_000) return false;
+  LAST_POLL = Date.now();
+  let j;
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${env.TG_TOKEN}/getUpdates?timeout=0&allowed_updates=["message"]&offset=${data.tg_offset || 0}`,
+      { signal: AbortSignal.timeout(3000) });
+    j = await r.json();
+  } catch {
+    return false;
+  }
+  if (!j.ok || !j.result.length) return false;
+  for (const u of j.result) {
+    data.tg_offset = Math.max(data.tg_offset || 0, u.update_id + 1);
+    const m = u.message;
+    if (!m || String(m.chat.id) !== String(env.TG_CHAT) || m.from.is_bot) continue;
+    let t = m.text || m.caption || "";
+    if (t.startsWith("/")) continue;
+    t = t.replace(/\s+/g, " ").replace(GLYPHS_OK, "").trim();
+    if (!t) t = m.photo ? "[Foto]" : m.sticker ? "[Sticker]" : m.voice ? "[Sprachnachricht]" : "[Emoji]";
+    addMessage(data, { from: String(m.from.first_name || "").slice(0, 30), text: t.slice(0, 300), at: m.date, me: 0 });
+  }
+  return true;
+}
+
 const clampFl = (v) => Math.max(0, Math.min(FL_MAX, Math.round(v)));
 const readFl = (url) => { const v = url.searchParams.get("fl"); return v !== null && /^\d+$/.test(v) ? clampFl(+v) : 12; };
 
@@ -224,16 +278,18 @@ function applyAction(action, st, data, now, fl = 12) {
     if (kind === "open") return { st: { m: "h", v: rest }, write: false }; // open one period on the day view
     if (kind === "goto") return { st: { m: "h", v: `day:${rest}` }, write: false };
     if (kind === "compose") return { st: composeDefaults(now), write: false };
+    if (kind === "message") return { st: { ...composeDefaults(now), t: "m" }, write: false };
     if (kind === "light") return { st: { m: "l" }, write: false };
     return { st, write: false };
   }
-  const s = { ...st };
+  const s = { ...st, f: 0 };
+  const max = s.t === "m" ? MSG_MAX : 60;
   switch (kind) {
     case "key":
-      if (s.s.length < 60) s.s += s.sh && rest !== "ß" ? rest.toUpperCase() : rest;
+      if (s.s.length < max) s.s += s.sh && rest !== "ß" ? rest.toUpperCase() : rest;
       s.sh = 0;
       break;
-    case "space": if (s.s && !s.s.endsWith(" ") && s.s.length < 60) s.s += " "; break;
+    case "space": if (s.s && !s.s.endsWith(" ") && s.s.length < max) s.s += " "; break;
     case "back": s.s = [...s.s].slice(0, -1).join(""); if (!s.s) s.sh = 1; break;
     case "shift": s.sh = s.sh ? 0 : 1; break;
     case "type": s.t = rest === "h" ? "h" : "e"; if (s.t === "h" && s.r === "once") s.r = "daily"; break;
@@ -249,6 +305,7 @@ function applyAction(action, st, data, now, fl = 12) {
     case "cancel": return { st: { m: "h", v: "day" }, write: false };
     case "save": {
       const title = s.s.trim();
+      if (s.t === "m") return { st: s, write: false, send: title }; // sent by the /tap handler
       if (!title || (s.r === "days" && !s.w)) return { st: s, write: false };
       const days = s.r === "days" ? ALL_DAYS.filter((i) => s.w & (1 << i)) : [...ALL_DAYS];
       if (s.t === "e") {
@@ -444,17 +501,22 @@ export default {
         ctx.waitUntil(save(env, data));
       }
       const wx = await weather(loc, ctx);
+      let changed = fromKindle && (await pollTelegram(env, data));
       const bat = fromKindle ? (url.searchParams.get("bat") || "").replace(/\D/g, "") || null : null;
       let kind, st;
       if (fromKindle) {
         st = decodeState(url.searchParams.get("s"), now);
         kind = url.searchParams.get("lock") === "1" ? "lock" : st.m === "c" ? "compose" : st.m === "l" ? "light" : "home";
+        const last = (data.messages || []).at(-1);
+        if (kind === "compose" && st.t === "m" && last && last.at > (data.msg_seen || 0)) { data.msg_seen = last.at; changed = true; }
       } else {
         const v = url.searchParams.get("view") || "day";
-        kind = v === "lock" ? "lock" : v === "compose" ? "compose" : v === "light" ? "light" : "home";
-        st = kind === "compose" ? { ...composeDefaults(now), s: "Schwimmen", r: "days", w: 0b0000101, tm: 15 * 60 + 30, sh: 0 }
+        kind = v === "lock" ? "lock" : v === "compose" || v === "message" ? "compose" : v === "light" ? "light" : "home";
+        st = v === "message" ? { ...composeDefaults(now), t: "m", s: "Papa, wann kommst du heute nach Hause? Ich habe meine Hausaufgaben fertig!", sh: 0 }
+          : kind === "compose" ? { ...composeDefaults(now), s: "Schwimmen", r: "days", w: 0b0000101, tm: 15 * 60 + 30, sh: 0 }
           : { m: "h", v: ["day", "week", "month"].includes(v) ? v : "day" };
       }
+      if (changed) ctx.waitUntil(save(env, data));
       const bytes = renderPage(kind, data, st, { now, loc, wx, battery: bat, fl: readFl(url) });
       return png(bytes, fromKindle ? { "X-Kindle-Command": data.kindle_command || "run" } : {});
     }
@@ -468,6 +530,15 @@ export default {
         : st.m === "l" ? renderLight(fl).zones : body(data, st.v || "day", now).zones;
       const res = applyAction(hit(zones, x, y), st, data, now, fl);
       if (res.write) await save(env, data);
+      if (res.send) {
+        const ok = await sendTelegram(env, `${data.child_name || "Kindle"}: ${res.send}`);
+        res.st = ok ? { ...res.st, s: "", sh: 1, f: 1 } : { ...res.st, f: 2 };
+        if (ok) {
+          addMessage(data, { from: data.child_name || "Ich", text: res.send, at: Math.floor(Date.now() / 1000), me: 1 });
+          data.msg_seen = Math.floor(Date.now() / 1000);
+          await save(env, data);
+        }
+      }
       const r = text(encodeState(res.st));
       if (res.fl !== undefined) r.headers.set("X-Kindle-Light", String(res.fl));
       return r;

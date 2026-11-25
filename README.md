@@ -132,6 +132,8 @@ npx wrangler secret put ACCESS_TEAM_DOMAIN   # e.g. yourteam.cloudflareaccess.co
 npx wrangler secret put ACCESS_AUD           # Access application audience tag
 npx wrangler secret put ALLOWED_EMAILS       # comma-separated parent emails
 npx wrangler secret put KINDLE_CLIENT_ID     # client ID of the Kindle service token
+npx wrangler secret put TG_TOKEN             # Telegram bot token from @BotFather (optional)
+npx wrangler secret put TG_CHAT              # Telegram family group chat ID (optional)
 npm run deploy
 ```
 
