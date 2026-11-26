@@ -35,4 +35,10 @@ for (const l of R.LANGS) {
 const keys = () => R.renderCompose(data, R.composeDefaults(now), now).zones.map((z) => z[4]);
 R.setLang("en"); assert.ok(keys().includes("key:'") && !keys().includes("key:ß")); // QWERTY layout
 R.setLang("de"); assert.ok(keys().includes("key:ß"));
+// a habit added today does not change earlier days
+const old = { id: "a", title: "Old", days: R.ALL_DAYS }, added = { id: "b", title: "New", days: R.ALL_DAYS, from: "2026-11-25" };
+const hd = { ...data, habits: { morning: [old, added], afternoon: [], night: [] }, done: { "2026-11-24": ["a"] } };
+assert.deepEqual(R.progress(hd, R.parseDate("2026-11-24")), [1, 1], "yesterday stays complete");
+assert.deepEqual(R.progress(hd, R.parseDate("2026-11-25")), [0, 2]);
+assert.deepEqual(R.progress(hd, R.parseDate("2026-11-30")), [0, 2]);
 console.log("render checks passed");

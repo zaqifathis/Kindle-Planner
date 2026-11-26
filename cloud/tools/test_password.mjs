@@ -103,6 +103,8 @@ const tomorrow = R.iso(R.addDays(R.localNow("Europe/Berlin").date, 1));
 assert.deepEqual([ev.title, ev.date, ev.time, ev.repeat], ["Swimming", tomorrow, "15:30", "none"]);
 await tap({ m: "c", t: "h", s: "Read", r: "days", w: 0b0000101, tm: -1, p: 2, sh: 0 }, ...SAVE);
 assert.deepEqual(JSON.parse(kv.get("data")).habits.night.at(-1).days, [0, 2], "habit on Mon and Wed, evening");
+const today = R.iso(R.localNow("Europe/Berlin").date);
+assert.equal(JSON.parse(kv.get("data")).habits.night.at(-1).from, today, "a Kindle habit starts today");
 r = await tap({ m: "c", t: "m", s: "Hi Papa", sh: 0 }, ...SAVE);
 const texts = JSON.parse(kv.get("data")).messages.map((m) => m.text);
 assert.ok(texts.includes("Hi Papa") && texts.includes("ok"), "the sent message is saved and the reply that came during the send stays");
@@ -115,6 +117,7 @@ assert.equal(JSON.parse(kv.get("data")).messages.at(-1).from, "constructor");
 
 // CSV export: a name that starts like a formula is written as text
 await api("/api/habit", { title: "=1+1", period: "morning", days: [0, 1, 2, 3, 4, 5, 6] });
+assert.equal(JSON.parse(kv.get("data")).habits.morning.at(-1).from, today, "a dashboard habit starts today");
 assert.match(await (await call("/api/export?format=csv", { cookie })).text(), /,'=1\+1,/);
 assert.equal((await api("/api/telegram", { off: true })).status, 200);
 assert.equal(await (await call("/kindle/wait", { key: kindleKey })).text(), "off");

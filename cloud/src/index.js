@@ -367,7 +367,7 @@ function applyAction(action, st, data, now, fl = 12) {
           repeat: s.r === "once" ? "none" : s.r, days: s.r === "days" ? days : [],
         });
       } else {
-        data.habits[PERIODS[s.p][0]].push({ id: newId(), title, days, alias: [] });
+        data.habits[PERIODS[s.p][0]].push({ id: newId(), title, days, alias: [], from: iso(now.date) });
       }
       return { st: { m: "h", v: "day" }, write: true };
     }
@@ -429,7 +429,8 @@ function firstDay(data, now) {
 }
 
 /** One entry per day from the first recorded day (at most maxDays back) to today.
- *  shortcut: past days are scored against today's habit schedule; snapshot the schedule if habits change often. */
+ *  shortcut: past days use today's habit list (new habits count from their "from" day; deleted habits and
+ *  changed weekdays still change the past); keep an end date per habit if that matters. */
 function history(data, now, maxDays) {
   const out = [];
   const start = firstDay(data, now), first = addDays(now.date, -(maxDays - 1));
@@ -753,7 +754,7 @@ export default {
         if (!title) return json({ error: "title needed" }, 400);
         const days = cleanDays(b.days);
         if (!days.length) return json({ error: "pick at least one day" }, 400);
-        data.habits[p].push({ id: newId(), title, days, alias: [] });
+        data.habits[p].push({ id: newId(), title, days, alias: [], from: today });
       } else if (path === "/api/habit/update") {
         const f = findHabit(b.id);
         if (!f) return json({ error: "not found" }, 404);

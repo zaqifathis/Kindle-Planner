@@ -134,12 +134,14 @@ export function periodIndex(now) {
 }
 
 // ------------------------------------------------------------ data helpers (model v4)
-// habits: { morning: [{id, title, days:[0..6], alias:[ids]}], afternoon: [...], night: [...] }
+// habits: { morning: [{id, title, days:[0..6], alias:[ids], from?:"YYYY-MM-DD"}], afternoon: [...], night: [...] }
+// "from": first day of a habit added later, so earlier days keep the habits they had (none = always)
 // events: [{id, date, time, title, repeat: "none"|"daily"|"days", days:[0..6]}]
 export function habitsOn(data, day) {
   const wd = weekday(day);
   const out = {};
-  for (const [p] of PERIODS) out[p] = (data.habits[p] || []).filter((h) => (h.days || ALL_DAYS).includes(wd));
+  const d = iso(day);
+  for (const [p] of PERIODS) out[p] = (data.habits[p] || []).filter((h) => (h.days || ALL_DAYS).includes(wd) && !(h.from > d));
   return out;
 }
 export function isDone(doneSet, h) {
