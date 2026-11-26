@@ -1,13 +1,108 @@
-// Kindle display pages (1072x1448), German.
-// Pages: home (Tag / Woche / Monat tabs + add button), lock (big clock, name), compose (add).
+// Kindle display pages (1072x1448), German or English (setLang).
+// Pages: home (Day / Week / Month tabs + add button), lock (big clock, name), compose (add).
 import { Img, fit, clip, textWidth } from "./raster.js";
 
 export const W = 1072, H = 1448;
-export const PERIODS = [["morning", "Morgens"], ["afternoon", "Nachmittags"], ["night", "Abends"]];
-const DAY_LONG = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
-export const DAY_SHORT = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
-const MONTHS = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August",
-  "September", "Oktober", "November", "Dezember"];
+export const PERIODS = [["morning"], ["afternoon"], ["night"]];
+const pad2 = (n) => String(n).padStart(2, "0");
+
+const WMO_DE = {
+  0: "Sonnig", 1: "Überwiegend sonnig", 2: "Teils bewölkt", 3: "Bewölkt", 45: "Nebel", 48: "Nebel",
+  51: "Nieselregen", 53: "Nieselregen", 55: "Nieselregen", 56: "Eisiger Niesel", 57: "Eisiger Niesel",
+  61: "Leichter Regen", 63: "Regen", 65: "Starker Regen", 66: "Eisregen", 67: "Eisregen",
+  71: "Leichter Schnee", 73: "Schnee", 75: "Starker Schnee", 77: "Schnee", 80: "Schauer", 81: "Schauer",
+  82: "Starke Schauer", 85: "Schneeschauer", 86: "Schneeschauer", 95: "Gewitter", 96: "Gewitter", 99: "Gewitter",
+};
+const WMO_EN = {
+  0: "Sunny", 1: "Mostly sunny", 2: "Partly cloudy", 3: "Cloudy", 45: "Foggy", 48: "Foggy",
+  51: "Drizzle", 53: "Drizzle", 55: "Drizzle", 56: "Icy drizzle", 57: "Icy drizzle",
+  61: "Light rain", 63: "Rain", 65: "Heavy rain", 66: "Icy rain", 67: "Icy rain",
+  71: "Light snow", 73: "Snow", 75: "Heavy snow", 77: "Snow", 80: "Showers", 81: "Showers",
+  82: "Heavy showers", 85: "Snow showers", 86: "Snow showers", 95: "Thunderstorm", 96: "Thunderstorm", 99: "Thunderstorm",
+};
+
+export const STR = {
+  de: {
+    periods: ["Morgens", "Nachmittags", "Abends"],
+    dayLong: ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"],
+    dayShort: ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"],
+    months: ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August",
+      "September", "Oktober", "November", "Dezember"],
+    headerDate: (d, s) => `${s.dayLong[weekday(d)]}, ${pad2(d.getUTCDate())}.${pad2(d.getUTCMonth() + 1)}.${d.getUTCFullYear()}`,
+    longDate: (d, s) => `${s.dayLong[weekday(d)]}, ${d.getUTCDate()}. ${s.months[d.getUTCMonth()]}`,
+    shortDay: (d, s) => `${s.dayShort[weekday(d)]} ${d.getUTCDate()}.`,
+    weekOf: (d, s) => `Woche vom ${d.getUTCDate()}. ${s.months[d.getUTCMonth()]}`,
+    tabs: ["Tag", "Woche", "Monat"], backToday: "zurück zu heute", nothing: "Nichts geplant",
+    moreWeb: (n) => `+ ${n} weitere (im Web-Dashboard)`, more: (n) => `+ ${n} weitere`,
+    empty: "Noch nichts geplant.", emptyHint: "Tippe hier oder oben rechts auf +.",
+    allDone: "Alles geschafft! Super!", nOfM: (n, m) => `${n} von ${m} erledigt`,
+    someDone: "etwas erledigt", everyDone: "alles erledigt",
+    wxRange: (lo, hi) => `${lo}° bis ${hi}°`, battery: (b) => `Akku ${b} %`,
+    locked: "Gesperrt · Ein/Aus-Taste zum Entsperren",
+    flPresets: ["Aus", "Wenig", "Mittel", "Hell", "Max"], settings: "Einstellungen", light: "Licht",
+    connectedTo: (s) => `Verbunden mit ${s}`, connected: "Verbunden", signal: "Signal", reconnect: "Neu verbinden",
+    reconnectHint: "Hilft, wenn neue Seiten nicht mehr kommen.", level: (l, m) => `Stufe ${l} von ${m}`,
+    lightOff: "Das Licht ist aus", powerHint: "Die Ein/Aus-Taste sperrt den Bildschirm und macht das Licht aus.",
+    done: "Fertig", today: "Heute", tomorrow: "Morgen", messages: "Nachrichten", noMessages: "Noch keine Nachrichten",
+    sentAgain: "Gesendet! Schreib noch eine?", sayWhat: "Was möchtest du sagen?", notSent: "Nicht gesendet!",
+    resend: "Nochmal senden", send: "Senden", newTitle: "Neu", event: "Termin", habit: "Aufgabe",
+    eventPh: "Was ist los?", habitPh: "Was willst du tun?", howOften: "Wie oft?", once: "Einmal", daily: "Jeden Tag",
+    someDays: "Bestimmte Tage", when: "Wann?", whichDays: "An welchen Tagen? (mehrere möglich)",
+    dailyFrom: "Jeden Tag, ab heute", time: "Uhrzeit", allDay: "Ganztägig", hour: "Stunde", minute: "Minute",
+    whenInDay: "Wann am Tag?", cancel: "Abbrechen", save: "Speichern", space: "Leertaste",
+    me: "Ich", wmo: WMO_DE,
+    demoMsg: "Papa, wann kommst du heute nach Hause? Ich habe meine Hausaufgaben fertig!", demoEvent: "Schwimmen",
+    kb: [
+      ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
+      ["q", "w", "e", "r", "t", "z", "u", "i", "o", "p", "ü"],
+      ["a", "s", "d", "f", "g", "h", "j", "k", "l", "ö", "ä"],
+      [["shift", 1.5], "y", "x", "c", "v", "b", "n", "m", "ß", ["back", 1.5]],
+      ["-", "?", "!", ["space", 5], ".", ",", ":"],
+    ],
+  },
+  en: {
+    periods: ["Morning", "Afternoon", "Evening"],
+    dayLong: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+    dayShort: ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"],
+    months: ["January", "February", "March", "April", "May", "June", "July", "August",
+      "September", "October", "November", "December"],
+    headerDate: (d, s) => `${s.dayLong[weekday(d)]}, ${s.months[d.getUTCMonth()].slice(0, 3)} ${d.getUTCDate()}, ${d.getUTCFullYear()}`,
+    longDate: (d, s) => `${s.dayLong[weekday(d)]}, ${s.months[d.getUTCMonth()]} ${d.getUTCDate()}`,
+    shortDay: (d, s) => `${s.dayShort[weekday(d)]} ${d.getUTCDate()}`,
+    weekOf: (d, s) => `Week of ${s.months[d.getUTCMonth()]} ${d.getUTCDate()}`,
+    tabs: ["Day", "Week", "Month"], backToday: "back to today", nothing: "Nothing planned",
+    moreWeb: (n) => `+ ${n} more (in the web dashboard)`, more: (n) => `+ ${n} more`,
+    empty: "Nothing planned yet.", emptyHint: "Tap here or + at the top right.",
+    allDone: "All done! Great job!", nOfM: (n, m) => `${n} of ${m} done`,
+    someDone: "some done", everyDone: "all done",
+    wxRange: (lo, hi) => `${lo}° to ${hi}°`, battery: (b) => `Battery ${b} %`,
+    locked: "Locked · Press the power button to unlock",
+    flPresets: ["Off", "Low", "Medium", "Bright", "Max"], settings: "Settings", light: "Light",
+    connectedTo: (s) => `Connected to ${s}`, connected: "Connected", signal: "Signal", reconnect: "Reconnect",
+    reconnectHint: "Helps when new pages stop coming.", level: (l, m) => `Level ${l} of ${m}`,
+    lightOff: "The light is off", powerHint: "The power button locks the screen and turns the light off.",
+    done: "Done", today: "Today", tomorrow: "Tomorrow", messages: "Messages", noMessages: "No messages yet",
+    sentAgain: "Sent! Write another one?", sayWhat: "What do you want to say?", notSent: "Not sent!",
+    resend: "Send again", send: "Send", newTitle: "New", event: "Event", habit: "Task",
+    eventPh: "What is happening?", habitPh: "What do you want to do?", howOften: "How often?", once: "Once", daily: "Every day",
+    someDays: "Some days", when: "When?", whichDays: "Which days? (pick one or more)",
+    dailyFrom: "Every day, from today", time: "Time", allDay: "All day", hour: "Hour", minute: "Minute",
+    whenInDay: "When in the day?", cancel: "Cancel", save: "Save", space: "Space",
+    me: "Me", wmo: WMO_EN,
+    demoMsg: "Dad, when are you coming home today? I finished my homework!", demoEvent: "Swimming",
+    kb: [
+      ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
+      ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
+      ["a", "s", "d", "f", "g", "h", "j", "k", "l", "'"],
+      [["shift", 1.5], "z", "x", "c", "v", "b", "n", "m", ["back", 1.5]],
+      ["-", "?", "!", ["space", 5], ".", ",", ":"],
+    ],
+  },
+};
+export const LANGS = Object.keys(STR);
+let S = STR.de;
+// shortcut: module-level language, so call setLang right before each (synchronous) render; fine while one Worker serves one family
+export function setLang(lang) { S = STR[lang] || STR.de; return S; }
 export const SPLIT = 112; // rows above change every minute (time and date text)
 export const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 // Gray levels (0 = black ink, 255 = paper). Text uses SUB or MUTED only, both >= 5:1 on white.
@@ -23,8 +118,6 @@ export function parseDate(s) {
 export const iso = (d) => d.toISOString().slice(0, 10);
 export const addDays = (d, n) => new Date(d.getTime() + n * 86400000);
 export const weekday = (d) => (d.getUTCDay() + 6) % 7; // Monday = 0
-const pad2 = (n) => String(n).padStart(2, "0");
-
 export function localNow(tz) {
   const parts = {};
   for (const p of new Intl.DateTimeFormat("en-US", {
@@ -165,7 +258,7 @@ export function drawHeader(g, now) {
   g.rect(0, 0, TEXT_R, SPLIT, 255);
   const cy = (BTN_Y0 + BTN_Y1) / 2;
   const tw = g.text(30, cy, `${pad2(now.hour)}:${pad2(now.minute)}`, 72, true, 0, "lm");
-  const d = now.date, date = `${DAY_LONG[weekday(d)]}, ${pad2(d.getUTCDate())}.${pad2(d.getUTCMonth() + 1)}.${d.getUTCFullYear()}`;
+  const date = S.headerDate(now.date, S);
   const x = 30 + tw + 28;
   g.text(x, cy + 2, date, fit(date, TEXT_R - x, 38, false), false, 0, "lm");
 }
@@ -202,7 +295,8 @@ function drawTabs(c, active, news) {
   g.rect(x0, BTN_Y1 + 10, W - x0, BTN_Y1 + 13, 0);
 
   const gap = 16, tw = (W - 2 * x0 - 2 * gap) / 3;
-  [["day", "Tag"], ["week", "Woche"], ["month", "Monat"]].forEach(([key, label], i) => {
+  ["day", "week", "month"].forEach((key, i) => {
+    const label = S.tabs[i];
     const bx = x0 + i * (tw + gap), box = [bx, TABS_Y0, bx + tw, TABS_Y1], on = key === active;
     g.box(box, 36, on ? { fill: 0 } : { fill: 255, outline: 0, width: 5 });
     g.text((box[0] + box[2]) / 2, (box[1] + box[3]) / 2, label, 40, true, on ? 255 : 0, "mm");
@@ -215,8 +309,8 @@ function renderDay(c, data, day, now, base = "day", openPick = null) {
   const today = day.getTime() === now.date.getTime();
   let y = CONTENT_Y;
   if (!today) {
-    g.text(40, y, `${DAY_LONG[weekday(day)]}, ${day.getUTCDate()}. ${MONTHS[day.getUTCMonth()]}`, 44, true);
-    g.text(W - 40, y + 8, "zurück zu heute", 30, false, 0, "ra");
+    g.text(40, y, S.longDate(day, S), 44, true);
+    g.text(W - 40, y + 8, S.backToday, 30, false, 0, "ra");
     c.zone([0, y - 10, W, y + 60], "view:day");
     y += 70;
   }
@@ -251,8 +345,8 @@ function renderDay(c, data, day, now, base = "day", openPick = null) {
   const rowH = Math.max(76, Math.min(92, Math.floor(avail / Math.max(nOpen, 1)))); // 76 px = 6.4 mm, a child's fingertip
   const fitRows = Math.max(1, Math.floor(avail / rowH));
 
-  PERIODS.forEach(([p, label], pi) => {
-    const items = r[p];
+  PERIODS.forEach(([p], pi) => {
+    const items = r[p], label = S.periods[pi];
     const on = pi === open;
     g.box([30, y, W - 30, y + headH], 20, on ? { fill: 0 } : { fill: 255, outline: 0, width: 4 });
     const fg = on ? 255 : 0, bg = on ? 0 : 255, icx = 82, icy = y + headH / 2;
@@ -273,7 +367,7 @@ function renderDay(c, data, day, now, base = "day", openPick = null) {
     y += headH + 8;
     if (!on) return;
     if (!items.length) {
-      g.text(60, y + 30, "Nichts geplant", 32, false, MUTED, "lm");
+      g.text(60, y + 30, S.nothing, 32, false, MUTED, "lm");
       y += 66;
       return;
     }
@@ -292,7 +386,7 @@ function renderDay(c, data, day, now, base = "day", openPick = null) {
       y += rowH;
     }
     if (shown.length < items.length) {
-      g.text(60, y + rowH / 2, `+ ${items.length - shown.length} weitere (im Web-Dashboard)`, 30, false, MUTED, "lm");
+      g.text(60, y + rowH / 2, S.moreWeb(items.length - shown.length), 30, false, MUTED, "lm");
       y += rowH;
     }
     y += 6;
@@ -300,16 +394,16 @@ function renderDay(c, data, day, now, base = "day", openPick = null) {
   const [nd, nt] = progress(data, day);
   if (!nt && !evs.length) {
     // nothing planned at all: point to the + button
-    g.text(W / 2, y + 120, "Noch nichts geplant.", 44, true, 0, "ma");
-    g.text(W / 2, y + 190, "Tippe hier oder oben rechts auf +.", 32, false, SUB, "ma");
+    g.text(W / 2, y + 120, S.empty, 44, true, 0, "ma");
+    g.text(W / 2, y + 190, S.emptyHint, 32, false, SUB, "ma");
     c.zone([30, y + 80, W - 30, y + 260], "compose");
   }
   const fy = H - 40;
   if (nt && nd === nt) {
     star(g, 70, fy, 30);
-    g.text(112, fy, "Alles geschafft! Super!", 40, true, 0, "lm");
+    g.text(112, fy, S.allDone, 40, true, 0, "lm");
   } else if (nt) {
-    const label = `${nd} von ${nt} erledigt`, bx = 70 + textWidth(label, 36, true);
+    const label = S.nOfM(nd, nt), bx = 70 + textWidth(label, 36, true);
     g.text(40, fy, label, 36, true, 0, "lm");
     g.box([bx, fy - 15, W - 40, fy + 15], 15, { fill: 255, outline: 0, width: 4 });
     if (nd) g.box([bx, fy - 15, bx + Math.max(30, ((W - 40 - bx) * nd) / nt), fy + 15], 15, { fill: 0 });
@@ -319,7 +413,7 @@ function renderDay(c, data, day, now, base = "day", openPick = null) {
 function renderWeek(c, data, day, now) {
   const g = c.g;
   const monday = addDays(day, -weekday(day));
-  g.text(40, CONTENT_Y, `Woche vom ${monday.getUTCDate()}. ${MONTHS[monday.getUTCMonth()]}`, 40, true);
+  g.text(40, CONTENT_Y, S.weekOf(monday, S), 40, true);
   const top = CONTENT_Y + 64, rowH = Math.floor((H - 40 - top) / 7);
   for (let i = 0; i < 7; i++) {
     const dd = addDays(monday, i), y = top + i * rowH;
@@ -328,7 +422,7 @@ function renderWeek(c, data, day, now) {
     const bx = [44, y + 14, 184, y + rowH - 14];
     g.box(bx, 14, isToday ? { fill: 0 } : { fill: 255, outline: 0, width: 3 });
     const fg = isToday ? 255 : 0, cx = (bx[0] + bx[2]) / 2;
-    g.text(cx, y + rowH * 0.36, DAY_SHORT[i], 32, true, fg, "mm");
+    g.text(cx, y + rowH * 0.36, S.dayShort[i], 32, true, fg, "mm");
     g.text(cx, y + rowH * 0.68, String(dd.getUTCDate()), 44, true, fg, "mm");
     const evs = eventsOn(data, dd);
     const ex = 210;
@@ -340,7 +434,7 @@ function renderWeek(c, data, day, now) {
       g.text(ex, ey, clip(t, W - ex - 230, 32, true), 32, true);
       ey += 44;
     }
-    if (evs.length > nShow) g.text(ex, ey + 2, `+ ${evs.length - nShow} weitere`, 28, false, SUB);
+    if (evs.length > nShow) g.text(ex, ey + 2, S.more(evs.length - nShow), 28, false, SUB);
     const [nd, nt] = progress(data, dd);
     if (nt && dd <= now.date) {
       if (nd === nt) star(g, W - 100, y + rowH / 2, 38);
@@ -364,10 +458,10 @@ function monthGrid(day) {
 
 function renderMonth(c, data, day, now) {
   const g = c.g;
-  g.text(W / 2, CONTENT_Y + 6, `${MONTHS[day.getUTCMonth()]} ${day.getUTCFullYear()}`, 48, true, 0, "ma");
+  g.text(W / 2, CONTENT_Y + 6, `${S.months[day.getUTCMonth()]} ${day.getUTCFullYear()}`, 48, true, 0, "ma");
   let top = CONTENT_Y + 84;
   const cw = Math.floor((W - 60) / 7);
-  DAY_SHORT.forEach((n, i) => g.text(30 + i * cw + cw / 2, top, n, 28, true, 0, "ma"));
+  S.dayShort.forEach((n, i) => g.text(30 + i * cw + cw / 2, top, n, 28, true, 0, "ma"));
   top += 46;
   const weeks = monthGrid(day);
   const ch = Math.min(170, Math.floor((H - 70 - top) / weeks.length)); // 30 px kept for the legend
@@ -396,9 +490,9 @@ function renderMonth(c, data, day, now) {
   const ly = top + weeks.length * ch + 34;
   if (ly < H - 10) {
     g.disc(46, ly, 8, 0);
-    g.text(64, ly, "etwas erledigt", 28, false, SUB, "lm");
+    g.text(64, ly, S.someDone, 28, false, SUB, "lm");
     star(g, 300, ly, 16);
-    g.text(324, ly, "alles erledigt", 28, false, SUB, "lm");
+    g.text(324, ly, S.everyDone, 28, false, SUB, "lm");
   }
 }
 
@@ -431,31 +525,31 @@ export function renderLock(data, now, loc, wx, battery) {
     else g.text(W / 2, y + 20, name, fit(name, W - 80, 72, true), true, 0, "ma");
     y += 170;
   }
-  g.text(40, y, `${DAY_LONG[weekday(now.date)]}, ${now.date.getUTCDate()}. ${MONTHS[now.date.getUTCMonth()]}`, 48, true);
+  g.text(40, y, S.longDate(now.date, S), 48, true);
   if (wx) {
-    g.text(40, y + 80, `${wx.text}  ·  ${Math.round(wx.lo)}° bis ${Math.round(wx.hi)}°`, 34, false);
+    g.text(40, y + 80, `${S.wmo[wx.code] || ""}  ·  ${S.wxRange(Math.round(wx.lo), Math.round(wx.hi))}`, 34, false);
     g.text(W - 40, H - 30, `${Math.round(wx.temp)}°`, 140, true, 0, "rs");
   }
-  if (battery) g.text(40, y + (wx ? 140 : 80), `Akku ${battery} %`, 34, false);
-  g.text(40, H - 40, "Gesperrt · Ein/Aus-Taste zum Entsperren", 26, false, SUB, "ls");
+  if (battery) g.text(40, y + (wx ? 140 : 80), S.battery(battery), 34, false);
+  g.text(40, H - 40, S.locked, 26, false, SUB, "ls");
   return c;
 }
 
 // ------------------------------------------------------------ settings page (light + WLAN)
 // Front light level 0..24 (same scale as the Kindle powerd flIntensity).
 export const FL_MAX = 24;
-const FL_PRESETS = [[0, "Aus"], [6, "Wenig"], [12, "Mittel"], [18, "Hell"], [24, "Max"]];
+const FL_PRESETS = [0, 6, 12, 18, 24];
 
 /** wifi: { ssid, sig } as reported by the Kindle (either may be empty). tab: "l" light | "w" WLAN. */
 export function renderLight(fl, wifi = {}, tab = "l") {
   const c = new Canvas();
   const g = c.g;
   const lvl = Math.max(0, Math.min(FL_MAX, fl | 0));
-  g.text(40, 24, "Einstellungen", 64, true);
+  g.text(40, 24, S.settings, 64, true);
 
   // tabs, same look as Tag / Woche / Monat
   const x0 = 30, gap = 16, tw = (W - 2 * x0 - gap) / 2;
-  [["l", "Licht"], ["w", "WLAN"]].forEach(([key, label], i) => {
+  [["l", S.light], ["w", "WLAN"]].forEach(([key, label], i) => {
     const bx = x0 + i * (tw + gap), box = [bx, 126, bx + tw, 200], on = key === tab;
     g.box(box, 36, on ? { fill: 0 } : { fill: 255, outline: 0, width: 5 });
     g.text((box[0] + box[2]) / 2, 163, label, 40, true, on ? 255 : 0, "mm");
@@ -465,13 +559,13 @@ export function renderLight(fl, wifi = {}, tab = "l") {
   if (tab === "w") {
     // this page came over WLAN, so it is connected
     const ssid = (wifi.ssid || "").trim();
-    g.text(40, 260, ssid ? `Verbunden mit ${clip(ssid, W - 400, 40, true)}` : "Verbunden", 40, true);
-    if (wifi.sig) g.text(40, 324, `Signal: ${wifi.sig}`, 34, false, SUB);
-    pill(g, [40, 400, W - 40, 520], "Neu verbinden", 44, false);
+    g.text(40, 260, ssid ? S.connectedTo(clip(ssid, W - 400, 40, true)) : S.connected, 40, true);
+    if (wifi.sig) g.text(40, 324, `${S.signal}: ${wifi.sig}`, 34, false, SUB);
+    pill(g, [40, 400, W - 40, 520], S.reconnect, 44, false);
     c.zone([40, 390, W - 40, 530], "wifi");
-    g.text(40, 560, "Hilft, wenn neue Seiten nicht mehr kommen.", 30, false, SUB);
+    g.text(40, 560, S.reconnectHint, 30, false, SUB);
   } else {
-    g.text(40, 250, lvl ? `Stufe ${lvl} von ${FL_MAX}` : "Das Licht ist aus", 40, false, SUB);
+    g.text(40, 250, lvl ? S.level(lvl, FL_MAX) : S.lightOff, 40, false, SUB);
     // 12 bars, each one = 2 steps; tap a bar to pick that level
     const n = 12, bg = 14, bw = (W - 80 - bg * (n - 1)) / n, base = 640;
     for (let i = 0; i < n; i++) {
@@ -487,28 +581,21 @@ export function renderLight(fl, wifi = {}, tab = "l") {
     c.zone([W - 340, 680, W - 40, 830], "flstep:2");
     // presets
     const pg = 14, pw = (W - 80 - pg * (FL_PRESETS.length - 1)) / FL_PRESETS.length;
-    FL_PRESETS.forEach(([v, label], i) => {
+    FL_PRESETS.forEach((v, i) => {
+      const label = S.flPresets[i];
       const box = [40 + i * (pw + pg), 870, 40 + i * (pw + pg) + pw, 970];
       pill(g, box, label, 34, lvl === v);
       c.zone([box[0], box[1] - 10, box[2], box[3] + 10], `fl:${v}`);
     });
-    g.text(40, 1020, "Die Ein/Aus-Taste sperrt den Bildschirm und macht das Licht aus.", 26, false, SUB);
+    g.text(40, 1020, S.powerHint, 26, false, SUB);
   }
 
-  pill(g, [24, 1300, W - 24, 1420], "Fertig", 44, true);
+  pill(g, [24, 1300, W - 24, 1420], S.done, 44, true);
   c.zone([24, 1290, W - 24, H], "done");
   return c;
 }
 
 // ------------------------------------------------------------ compose page
-const KB = [
-  ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
-  ["q", "w", "e", "r", "t", "z", "u", "i", "o", "p", "ü"],
-  ["a", "s", "d", "f", "g", "h", "j", "k", "l", "ö", "ä"],
-  [["shift", 1.5], "y", "x", "c", "v", "b", "n", "m", "ß", ["back", 1.5]],
-  ["-", "?", "!", ["space", 5], ".", ",", ":"],
-];
-
 /** Compose state: t=e(vent)|h(abit)|m(essage), s=text, f=1 sent / 2 send failed, k=1 keyboard hidden, o=scroll (message only), r=once|daily|days, d=day offset, w=weekday bitmask,
  *  tm=minutes or -1, p=period, sh=shift */
 export function composeDefaults(now) {
@@ -516,9 +603,9 @@ export function composeDefaults(now) {
 }
 
 function dayLabel(day, i) {
-  if (i === 0) return "Heute";
-  if (i === 1) return "Morgen";
-  return `${DAY_SHORT[weekday(day)]} ${day.getUTCDate()}.`;
+  if (i === 0) return S.today;
+  if (i === 1) return S.tomorrow;
+  return S.shortDay(day, S);
 }
 
 export const MSG_MAX = 200;
@@ -562,14 +649,14 @@ function renderMessage(data, st) {
   const c = new Canvas();
   const g = c.g;
   const kb = !st.k;
-  g.text(40, 24, "Nachrichten", 56, true);
+  g.text(40, 24, S.messages, 56, true);
 
   // history, newest at the bottom; own messages right and gray, replies left and white
   const top = 110, bottom = kb ? 476 : 1070, ts = 32, tlh = 40, bw = 760, ax = W - 24 - 90;
   let y = bottom;
   const msgs = recentMessages(data);
   const o = Math.min(st.o || 0, Math.max(0, msgs.length - 1));
-  if (!msgs.length) g.text(W / 2, (top + bottom) / 2, "Noch keine Nachrichten", 34, false, MUTED, "mm");
+  if (!msgs.length) g.text(W / 2, (top + bottom) / 2, S.noMessages, 34, false, MUTED, "mm");
   let i = msgs.length - 1 - o;
   for (; i >= 0 && y > top + 60; i--) {
     const m = msgs[i];
@@ -600,20 +687,20 @@ function renderMessage(data, st) {
   } else {
     const ly = fb[1] + 22 + lh / 2;
     g.rect(fb[0] + 30, ly - 20, fb[0] + 35, ly + 20, 0);
-    g.text(fb[0] + 52, ly, st.f === 1 ? "Gesendet! Schreib noch eine?" : "Was möchtest du sagen?", 38, false, MUTED, "lm");
+    g.text(fb[0] + 52, ly, st.f === 1 ? S.sentAgain : S.sayWhat, 38, false, MUTED, "lm");
   }
   if (!kb) c.zone(fb, "kb"); // tap the text field to bring the keyboard back
   const kbb = [W - 24 - 120, fy, W - 24, fy + 140]; // keyboard on/off next to the text field; black = shown
   g.box(kbb, 24, kb ? { fill: 0 } : { fill: 255, outline: 0, width: 5 });
   keyboardIcon(g, (kbb[0] + kbb[2]) / 2, (kbb[1] + kbb[3]) / 2, kb ? 255 : 0, kb ? 0 : 255);
   c.zone([kbb[0] - 8, kbb[1] - 8, kbb[2] + 8, kbb[3] + 8], "kb");
-  if (st.f === 2) g.text(W - 24, 56, "Nicht gesendet!", 36, true, 0, "rm");
+  if (st.f === 2) g.text(W - 24, 56, S.notSent, 36, true, 0, "rm");
   if (kb) drawKeyboard(c, st, 644, 116); // ends at 1272, just above the buttons
   const by0 = 1300, by1 = 1420;
-  pill(g, [24, by0, 520, by1], "Fertig", 44, false);
+  pill(g, [24, by0, 520, by1], S.done, 44, false);
   c.zone([24, by0 - 10, 520, H], "cancel");
   const can = st.s.trim().length > 0;
-  pill(g, [552, by0, W - 24, by1], st.f === 2 ? "Nochmal senden" : "Senden", 44, can, can ? {} : { outline: FAINT, textColor: FAINT });
+  pill(g, [552, by0, W - 24, by1], st.f === 2 ? S.resend : S.send, 44, can, can ? {} : { outline: FAINT, textColor: FAINT });
   c.zone([552, by0 - 10, W - 24, H], "save");
   return c;
 }
@@ -622,9 +709,9 @@ export function renderCompose(data, st, now) {
   if (st.t === "m") return renderMessage(data, st);
   const c = new Canvas();
   const g = c.g;
-  g.text(40, 24, "Neu", 56, true);
+  g.text(40, 24, S.newTitle, 56, true);
   // type toggle
-  [["e", "Termin"], ["h", "Aufgabe"]].forEach(([k, label], i) => {
+  [["e", S.event], ["h", S.habit]].forEach(([k, label], i) => {
     const box = [600 + i * 230, 26, 600 + i * 230 + 216, 90];
     pill(g, box, label, 32, st.t === k);
     c.zone([box[0], box[1] - 10, box[2], box[3] + 10], `type:${k}`);
@@ -642,13 +729,13 @@ export function renderCompose(data, st, now) {
     g.rect(fb[0] + 36 + w, fb[1] + 22, fb[0] + 41 + w, fb[3] - 22, 0);
   } else {
     g.rect(fb[0] + 30, fb[1] + 22, fb[0] + 35, fb[3] - 22, 0);
-    g.text(fb[0] + 52, (fb[1] + fb[3]) / 2, st.t === "e" ? "Was ist los?" : "Was willst du tun?", 42, false, MUTED, "lm");
+    g.text(fb[0] + 52, (fb[1] + fb[3]) / 2, st.t === "e" ? S.eventPh : S.habitPh, 42, false, MUTED, "lm");
   }
 
   // how often
-  g.text(40, 232, "Wie oft?", 26, false, SUB);
-  const often = st.t === "e" ? [["once", "Einmal"], ["daily", "Jeden Tag"], ["days", "Bestimmte Tage"]]
-    : [["daily", "Jeden Tag"], ["days", "Bestimmte Tage"]];
+  g.text(40, 232, S.howOften, 26, false, SUB);
+  const often = st.t === "e" ? [["once", S.once], ["daily", S.daily], ["days", S.someDays]]
+    : [["daily", S.daily], ["days", S.someDays]];
   const ow = (W - 48 - 10 * (often.length - 1)) / often.length;
   often.forEach(([k, label], i) => {
     const box = [24 + i * (ow + 10), 268, 24 + i * (ow + 10) + ow, 330];
@@ -659,7 +746,7 @@ export function renderCompose(data, st, now) {
   // which day(s)
   const n = 7, gap = 10, w = (W - 48 - gap * (n - 1)) / n;
   if (st.r === "once") {
-    g.text(40, 346, "Wann?", 26, false, SUB);
+    g.text(40, 346, S.when, 26, false, SUB);
     for (let i = 0; i < n; i++) {
       const day = addDays(now.date, i);
       const box = [24 + i * (w + gap), 382, 24 + i * (w + gap) + w, 444];
@@ -667,24 +754,24 @@ export function renderCompose(data, st, now) {
       c.zone([box[0], box[1] - 8, box[2], box[3] + 8], `day:${i}`);
     }
   } else if (st.r === "days") {
-    g.text(40, 346, "An welchen Tagen? (mehrere möglich)", 26, false, SUB);
+    g.text(40, 346, S.whichDays, 26, false, SUB);
     for (let i = 0; i < n; i++) {
       const box = [24 + i * (w + gap), 382, 24 + i * (w + gap) + w, 444];
-      pill(g, box, DAY_SHORT[i], 30, !!(st.w & (1 << i)));
+      pill(g, box, S.dayShort[i], 30, !!(st.w & (1 << i)));
       c.zone([box[0], box[1] - 8, box[2], box[3] + 8], `wd:${i}`);
     }
   } else {
-    g.text(40, 346, "Jeden Tag, ab heute", 26, false, SUB);
+    g.text(40, 346, S.dailyFrom, 26, false, SUB);
   }
 
   // time (event) or period (habit)
   if (st.t === "e") {
-    g.text(40, 460, "Uhrzeit", 26, false, SUB);
+    g.text(40, 460, S.time, 26, false, SUB);
     const row = 496, set = st.tm >= 0;
-    pill(g, [24, row, 290, row + 62], "Ganztägig", 32, !set);
+    pill(g, [24, row, 290, row + 62], S.allDay, 32, !set);
     c.zone([24, row - 8, 290, row + 70], "allday");
     // hour and minute each get their own – / +, so any time is a few taps away
-    [[312, "h", set ? pad2(Math.floor(st.tm / 60)) : "--", "Stunde"], [732, "m", set ? pad2(st.tm % 60) : "--", "Minute"]]
+    [[312, "h", set ? pad2(Math.floor(st.tm / 60)) : "--", S.hour], [732, "m", set ? pad2(st.tm % 60) : "--", S.minute]]
       .forEach(([x, k, val, unit]) => {
         pill(g, [x, row, x + 88, row + 62], "–", 48, false);
         c.zone([x - 8, row - 8, x + 93, row + 70], `${k}minus`);
@@ -695,9 +782,9 @@ export function renderCompose(data, st, now) {
       });
     g.text(680, row + 31, ":", 48, true, 0, "mm");
   } else {
-    g.text(40, 460, "Wann am Tag?", 26, false, SUB);
+    g.text(40, 460, S.whenInDay, 26, false, SUB);
     const pw = (W - 48 - 20) / 3;
-    PERIODS.forEach(([, label], i) => {
+    S.periods.forEach((label, i) => {
       const box = [24 + i * (pw + 10), 496, 24 + i * (pw + 10) + pw, 558];
       pill(g, box, label, 28, st.p === i);
       c.zone([box[0], box[1] - 8, box[2], box[3] + 8], `period:${i}`);
@@ -708,10 +795,10 @@ export function renderCompose(data, st, now) {
 
   // buttons
   const by0 = 1300, by1 = 1420;
-  pill(g, [24, by0, 520, by1], "Abbrechen", 44, false);
+  pill(g, [24, by0, 520, by1], S.cancel, 44, false);
   c.zone([24, by0 - 10, 520, H], "cancel");
   const can = st.s.trim().length > 0 && !(st.r === "days" && !st.w);
-  pill(g, [552, by0, W - 24, by1], "Speichern", 44, can, can ? {} : { outline: FAINT, textColor: FAINT });
+  pill(g, [552, by0, W - 24, by1], S.save, 44, can, can ? {} : { outline: FAINT, textColor: FAINT });
   c.zone([552, by0 - 10, W - 24, H], "save");
   return c;
 }
@@ -720,7 +807,7 @@ function drawKeyboard(c, st, ky, kh = 96) {
   const g = c.g;
   const unit = (W - 48) / 11, gapK = 8;
   const upper = !!st.sh;
-  for (const row of KB) {
+  for (const row of S.kb) {
     const units = row.reduce((s, k) => s + (Array.isArray(k) ? k[1] : 1), 0);
     let kx = 24 + ((11 - units) * unit) / 2;
     for (const k of row) {
@@ -738,7 +825,7 @@ function drawKeyboard(c, st, ky, kh = 96) {
         g.line(cx - 4, cy - 10, cx + 16, cy + 10, 5, FILL, true);
         g.line(cx - 4, cy + 10, cx + 16, cy - 10, 5, FILL, true);
       } else if (name === "space") {
-        g.text(cx, cy, "Leertaste", 30, false, 0, "mm");
+        g.text(cx, cy, S.space, 30, false, 0, "mm");
       } else {
         g.text(cx, cy, upper && name !== "ß" ? name.toUpperCase() : name, 40, true, 0, "mm");
       }

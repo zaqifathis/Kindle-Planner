@@ -331,7 +331,9 @@ footer{padding:30px 0 50px;color:var(--muted);font-size:14px}
       <div class="r"><input id="set-name" maxlength="30"></div>
       <label for="set-lock" data-i18n="k.lockName">Name on the lock screen</label>
       <div class="r"><input id="set-lock" maxlength="40" data-i18n-ph="k.lockPh"></div>
-      <div class="r" style="margin-top:14px"><button class="btn primary" id="save-set" data-i18n="k.save">Save names</button><span class="status" id="set-status" role="status"></span></div>
+      <label for="set-klang" data-i18n="k.lang">Kindle language</label>
+      <div class="r"><select id="set-klang" class="btn"><option value="en">English</option><option value="de">Deutsch</option></select></div>
+      <div class="r" style="margin-top:14px"><button class="btn primary" id="save-set" data-i18n="k.save">Save</button><span class="status" id="set-status" role="status"></span></div>
       <p style="opacity:.75;margin-top:26px;font-size:15px" data-i18n="k.help">Press the Kindle's power button to lock it: the light turns off and the lock screen shows the clock and the name. Press again to unlock.</p>
     </div>
   </div>
@@ -381,8 +383,8 @@ const I18N = {
     todayWord: "Today", nothingSoon: "Nothing in the next 7 days", noEvents: "No events yet",
     "k.day": "Day", "k.week": "Week", "k.month": "Month", "k.lock": "Lock", "k.add": "Add", "k.preview": "Preview of the Kindle display",
     "k.kicker": "Device", "k.title": "Kindle display", "k.stop": "Return to normal Kindle", "k.run": "Show display",
-    "k.name": "Child name (title on the Kindle)", "k.lockName": "Name on the lock screen", "k.lockPh": "e.g. first and last name",
-    "k.save": "Save names", "k.help": "Press the Kindle's power button to lock it: the light turns off and the lock screen shows the clock and the name. Press again to unlock.",
+    "k.name": "Child name (title on the Kindle)", "k.lockName": "Name on the lock screen", "k.lockPh": "e.g. first and last name", "k.lang": "Kindle language",
+    "k.save": "Save", "k.help": "Press the Kindle's power button to lock it: the light turns off and the lock screen shows the clock and the name. Press again to unlock.",
     "k.never": "The Kindle has not checked in yet.", "k.seen": "Last seen", "k.offline": "(no contact for a while: WLAN off, asleep, or out of battery?)",
     "k.wifi": "WLAN", "k.battery": "Battery",
     "k.stateStop": "The Kindle is in normal reader mode.", "k.stateRun": "The Kindle shows the planner display.",
@@ -426,8 +428,8 @@ const I18N = {
     todayWord: "Heute", nothingSoon: "Nichts in den nächsten 7 Tagen", noEvents: "Noch keine Termine",
     "k.day": "Tag", "k.week": "Woche", "k.month": "Monat", "k.lock": "Sperre", "k.add": "Neu", "k.preview": "Vorschau der Kindle-Anzeige",
     "k.kicker": "Gerät", "k.title": "Kindle-Anzeige", "k.stop": "Zurück zum normalen Kindle", "k.run": "Anzeige zeigen",
-    "k.name": "Name des Kindes (Titel auf dem Kindle)", "k.lockName": "Name auf dem Sperrbildschirm", "k.lockPh": "z. B. Vor- und Nachname",
-    "k.save": "Namen speichern", "k.help": "Drücke den Ein-/Aus-Knopf des Kindle, um ihn zu sperren: Das Licht geht aus und der Sperrbildschirm zeigt Uhr und Namen. Erneut drücken zum Entsperren.",
+    "k.name": "Name des Kindes (Titel auf dem Kindle)", "k.lockName": "Name auf dem Sperrbildschirm", "k.lockPh": "z. B. Vor- und Nachname", "k.lang": "Sprache auf dem Kindle",
+    "k.save": "Speichern", "k.help": "Drücke den Ein-/Aus-Knopf des Kindle, um ihn zu sperren: Das Licht geht aus und der Sperrbildschirm zeigt Uhr und Namen. Erneut drücken zum Entsperren.",
     "k.never": "Der Kindle hat sich noch nicht gemeldet.", "k.seen": "Zuletzt gesehen", "k.offline": "(länger kein Kontakt: WLAN aus, Ruhemodus oder Akku leer?)",
     "k.wifi": "WLAN", "k.battery": "Akku",
     "k.stateStop": "Der Kindle ist im normalen Lesemodus.", "k.stateRun": "Der Kindle zeigt den Planer.",
@@ -866,6 +868,7 @@ function renderKindle() {
   renderSeen();
   if (document.activeElement !== $("set-name")) $("set-name").value = S.child_name || "";
   if (document.activeElement !== $("set-lock")) $("set-lock").value = S.lock_name || "";
+  if (document.activeElement !== $("set-klang")) $("set-klang").value = S.kindle_lang || "de";
   refreshPreview();
 }
 function renderSeen() {
@@ -891,7 +894,7 @@ $("ktabs").onclick = (e) => {
 $("k-stop").onclick = async () => { await api("/api/kindle", { command: "stop" }); load(); };
 $("k-run").onclick = async () => { await api("/api/kindle", { command: "run" }); load(); };
 $("save-set").onclick = async () => {
-  await api("/api/settings", { child_name: $("set-name").value.trim(), lock_name: $("set-lock").value.trim() });
+  await api("/api/settings", { child_name: $("set-name").value.trim(), lock_name: $("set-lock").value.trim(), kindle_lang: $("set-klang").value });
   flash("set-status", t("saved")); load();
 };
 

@@ -22,4 +22,17 @@ const data = { habits: { morning: [], afternoon: [], night: [] }, events: [], do
 const acts = R.renderCompose(data, { ...R.composeDefaults(now), tm: 930 }, now).zones.map((z) => z[4]);
 for (const a of ["allday", "hminus", "hplus", "mminus", "mplus"]) assert.ok(acts.includes(a), a);
 assert.ok(R.renderBody(data, "day", now).zones.some((z) => z[4] === "compose" && z[1] > 400)); // empty-day hint
+
+// languages: same keys everywhere, and every page renders in each one
+for (const l of R.LANGS) assert.deepEqual(Object.keys(R.STR[l]).sort(), Object.keys(R.STR.de).sort(), l);
+for (const l of R.LANGS) {
+  R.setLang(l);
+  for (const v of ["day", "week", "month"]) R.renderBody(data, v, now);
+  R.renderLock(data, now, {}, { code: 3, temp: 5, lo: 1, hi: 7 }, 80);
+  R.renderLight(12, { ssid: "Home" }, "l"); R.renderLight(12, {}, "w");
+  for (const t of ["e", "h", "m"]) R.renderCompose(data, { ...R.composeDefaults(now), t }, now);
+}
+const keys = () => R.renderCompose(data, R.composeDefaults(now), now).zones.map((z) => z[4]);
+R.setLang("en"); assert.ok(keys().includes("key:'") && !keys().includes("key:ß")); // QWERTY layout
+R.setLang("de"); assert.ok(keys().includes("key:ß"));
 console.log("render checks passed");

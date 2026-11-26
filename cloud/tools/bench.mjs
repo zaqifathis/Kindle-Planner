@@ -12,6 +12,7 @@ export async function load(url, ctx, next) {
 }`), import.meta.url);
 const R = await import("../src/render.js");
 const P = await import("../src/png.js");
+R.setLang(process.env.LANG_KINDLE || "de"); // LANG_KINDLE=en node tools/bench.mjs
 // Sample data in the current model (v4); server/data.json is the old v2 format.
 const today = new Date().toISOString().slice(0, 10);
 const hab = (p, ...t) => t.map((title, i) => ({ id: `${p}${i}`, title }));
@@ -27,7 +28,7 @@ const data = {
   messages: [{ at: Date.now() / 1000 - 600, from: "Mama", text: "Hab dich lieb ❤️" }],
 };
 const now = R.localNow("Europe/Berlin");
-const loc = { city: "Dresden" }, wx = { temp: 5.6, text: "Bewölkt", hi: 6, lo: 3 };
+const loc = { city: "Dresden" }, wx = { temp: 5.6, code: 3, hi: 6, lo: 3 };
 const full = (c) => P.assemblePNG(R.W, R.H, [P.encodeRows(c.g, 0, R.H, true)]);
 // home: body rows are encoded once (cached in the Worker), the header rows every minute
 const home = (view) => () => { const c = R.renderBody(data, view, now); const piece = P.encodeRows(c.g, R.SPLIT, R.H, true);

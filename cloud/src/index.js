@@ -5,20 +5,13 @@
 import {
   renderBody, renderLock, renderCompose, renderLight, composeDefaults, drawHeader, FL_MAX, MSG_MAX,
   habitsOn, isDone, unread, recentMessages, progress, eventsOn, localNow, iso, parseDate, addDays, weekday, periodIndex,
-  PERIODS, ALL_DAYS, W, H, SPLIT,
+  PERIODS, ALL_DAYS, W, H, SPLIT, STR, LANGS, setLang,
 } from "./render.js";
 import { encodeRows, assemblePNG } from "./png.js";
 
 const FALLBACK = { city: "Dresden", lat: 51.0504, lon: 13.7373, tz: "Europe/Berlin" };
 const KEY = "data";
 
-const WMO = {
-  0: "Sonnig", 1: "Überwiegend sonnig", 2: "Teils bewölkt", 3: "Bewölkt", 45: "Nebel", 48: "Nebel",
-  51: "Nieselregen", 53: "Nieselregen", 55: "Nieselregen", 56: "Eisiger Niesel", 57: "Eisiger Niesel",
-  61: "Leichter Regen", 63: "Regen", 65: "Starker Regen", 66: "Eisregen", 67: "Eisregen",
-  71: "Leichter Schnee", 73: "Schnee", 75: "Starker Schnee", 77: "Schnee", 80: "Schauer", 81: "Schauer",
-  82: "Starke Schauer", 85: "Schneeschauer", 86: "Schneeschauer", 95: "Gewitter", 96: "Gewitter", 99: "Gewitter",
-};
 
 const newId = () => crypto.randomUUID().replace(/-/g, "").slice(0, 8);
 const cleanDays = (d) => [...new Set((Array.isArray(d) ? d : ALL_DAYS).map(Number).filter((x) => x >= 0 && x <= 6))].sort();
@@ -26,7 +19,7 @@ const cleanDays = (d) => [...new Set((Array.isArray(d) ? d : ALL_DAYS).map(Numbe
 function defaultData() {
   const h = (titles, days = ALL_DAYS) => titles.map((title) => ({ id: newId(), title, days: [...days], alias: [] }));
   return {
-    version: 4, child_name: "", lock_name: "", events: [], done: {}, kindle_command: "run", loc: null,
+    version: 4, child_name: "", lock_name: "", kindle_lang: "de", events: [], done: {}, kindle_command: "run", loc: null,
     messages: [], msg_seen: 0, tg_offset: 0,
     habits: {
       morning: h(["Aufstehen & waschen", "Frühstück", "Zähne putzen"]),
@@ -119,7 +112,7 @@ async function weather(loc, ctx) {
     );
     const j = await r.json();
     const wx = {
-      temp: j.current.temperature_2m, code: j.current.weather_code, text: WMO[j.current.weather_code] || "",
+      temp: j.current.temperature_2m, code: j.current.weather_code, text: STR.de.wmo[j.current.weather_code] || "",
       hi: j.daily.temperature_2m_max[0], lo: j.daily.temperature_2m_min[0],
     };
     ctx.waitUntil(cache.put(cacheKey, new Response(JSON.stringify(wx), {
@@ -567,6 +560,7 @@ export default {
     if (!auth) return json({ error: "unauthorized", access: accessMode }, accessMode ? 403 : 401);
 
     const data = await load(env, ctx);
+    const L = setLang(data.kindle_lang);
     const loc = requestLoc(request, data);
     const now = localNow(loc.tz || FALLBACK.tz);
     const today = iso(now.date);
@@ -604,8 +598,8 @@ export default {
       } else {
         const v = url.searchParams.get("view") || "day";
         kind = v === "lock" ? "lock" : v === "compose" || v === "message" ? "compose" : v === "light" ? "light" : "home";
-        st = v === "message" ? { ...composeDefaults(now), t: "m", s: "Papa, wann kommst du heute nach Hause? Ich habe meine Hausaufgaben fertig!", sh: 0 }
-          : kind === "compose" ? { ...composeDefaults(now), s: "Schwimmen", r: "days", w: 0b0000101, tm: 15 * 60 + 30, sh: 0 }
+        st = v === "message" ? { ...composeDefaults(now), t: "m", s: L.demoMsg, sh: 0 }
+          : kind === "compose" ? { ...composeDefaults(now), s: L.demoEvent, r: "days", w: 0b0000101, tm: 15 * 60 + 30, sh: 0 }
           : { m: "h", v: ["day", "week", "month"].includes(v) ? v : "day" };
       }
       if (changed) ctx.waitUntil(save(env, data));
@@ -627,7 +621,7 @@ export default {
         const ok = await sendTelegram(env, `${data.child_name || "Kindle"}: ${res.send}`);
         res.st = ok ? { ...res.st, s: "", sh: 1, f: 1, o: 0 } : { ...res.st, f: 2 };
         if (ok) {
-          addMessage(data, { from: data.child_name || "Ich", text: res.send, at: Math.floor(Date.now() / 1000), me: 1 });
+          addMessage(data, { from: data.child_name || L.me, text: res.send, at: Math.floor(Date.now() / 1000), me: 1 });
           data.msg_seen = Math.floor(Date.now() / 1000);
           await save(env, data);
         }
@@ -647,7 +641,7 @@ export default {
         today, weekday: weekday(now.date), hour: now.hour, minute: now.minute, period: periodIndex(now),
         today_habits: habitsOn(data, now.date), done: data.done[today] || [], habits: data.habits,
         events: data.events, upcoming: [0, 1, 2, 3, 4, 5, 6].flatMap((i) => eventsOn(data, addDays(now.date, i)).map((e) => ({ ...e, on: iso(addDays(now.date, i)) }))),
-        child_name: data.child_name || "", lock_name: data.lock_name || "",
+        child_name: data.child_name || "", lock_name: data.lock_name || "", kindle_lang: data.kindle_lang || "de",
         kindle_command: data.kindle_command || "run", weather: wx, city: loc.city || "",
         seen: await env.KV.get(SEEN_KEY, "json"),
       });
@@ -724,6 +718,7 @@ export default {
       } else if (path === "/api/settings") {
         if (b.child_name !== undefined) data.child_name = String(b.child_name).slice(0, 30);
         if (b.lock_name !== undefined) data.lock_name = String(b.lock_name).slice(0, 40);
+        if (LANGS.includes(b.kindle_lang)) data.kindle_lang = b.kindle_lang;
       } else if (path === "/api/kindle") {
         if (!["run", "stop"].includes(b.command)) return json({ error: "bad command" }, 400);
         data.kindle_command = b.command;

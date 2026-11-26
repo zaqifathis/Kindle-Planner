@@ -2,7 +2,7 @@
 
 A daily planner for a child on a jailbroken Kindle Paperwhite 3. The Kindle hangs on the wall and shows the day, the weather, events, and habit tick boxes. The child taps the e-ink screen to tick off habits and add events. A parent manages the same data from a web dashboard.
 
-The Kindle UI is in German. The web dashboard has an English/German switch.
+The Kindle UI is in English or German. You choose the Kindle language in the web dashboard, in the Kindle tab. The web dashboard has its own English/German switch.
 
 ## Features
 
