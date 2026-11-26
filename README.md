@@ -127,7 +127,7 @@ If the Access configuration is missing, the Worker uses password mode. This is t
 
 ## Jailbreak
 
-For a step-by-step guide for parents, see [docs/JAILBREAK.md](docs/JAILBREAK.md) or the web page https://zaqifathis.github.io/kindle-dashboard/#prepare. The Setup app automates WinterBreak and KUAL (see `setup/README.md`).
+For a step-by-step guide for parents, see [docs/JAILBREAK.md](docs/JAILBREAK.md) or the web page https://zaqifathis.github.io/Kindle-Planner/#prepare. The Setup app automates WinterBreak and KUAL (see `setup/README.md`).
 
 The device is a Kindle Paperwhite 3 (touch controller `cyttsp4_mt`, screen 1072x1448). These are the tools that were used:
 

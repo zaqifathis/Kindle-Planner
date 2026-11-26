@@ -1,6 +1,6 @@
 # Prepare the Kindle: jailbreak and KUAL
 
-The guide for parents is also a web page: https://zaqifathis.github.io/kindle-dashboard/#prepare (source: `docs/index.html`). A copy is also in the Claude Docs page "Prepare your Kindle". When you change a step, keep all copies the same.
+The guide for parents is also a web page: https://zaqifathis.github.io/Kindle-Planner/#prepare (source: `docs/index.html`). A copy is also in the Claude Docs page "Prepare your Kindle". When you change a step, keep all copies the same.
 
 Kid Planner is tested on a Kindle Paperwhite 3 (7th generation, 2015). Other touch Kindles with a screen from 758 to about 1264 pixels wide can work, but nobody tested them yet. Before Kid Planner can run, the Kindle needs two things:
 
