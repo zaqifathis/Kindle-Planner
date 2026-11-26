@@ -5,7 +5,7 @@
 import {
   renderBody, renderLock, renderCompose, renderLight, composeDefaults, drawHeader, FL_MAX, MSG_MAX,
   habitsOn, isDone, unread, recentMessages, progress, eventsOn, localNow, iso, parseDate, addDays, weekday, periodIndex,
-  PERIODS, ALL_DAYS, W, H, SPLIT, STR, LANGS, setLang,
+  PERIODS, ALL_DAYS, SPLIT, STR, LANGS, setLang, setScreen, SCREEN,
 } from "./render.js";
 import { encodeRows, assemblePNG } from "./png.js";
 
@@ -162,25 +162,35 @@ function encodeState(st) {
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+/** Screen size the Kindle reports (?scr=1072x1448). A size the layout cannot scale to gets the Paperwhite 3 size. */
+function readScreen(url) {
+  const m = /^(\d{3,4})x(\d{3,4})$/.exec(url.searchParams.get("scr") || "");
+  const w = m ? +m[1] : 1072, h = m ? +m[2] : 1448, s = Math.min(w / 1072, h / 1448);
+  return w <= h && s >= 0.65 && s <= 1.3 ? [w, h] : [1072, 1448]; // portrait only; smaller text would need smaller fonts
+}
+const splitRow = () => Math.ceil(SPLIT * SCREEN.s); // device row where the minute-by-minute header ends
+
 function body(data, view, now) {
-  const key = `${view}|${iso(now.date)}|${periodIndex(now)}|${data._hash}|${unread(data).length}`; // polled replies change data after load
+  const key = `${view}|${SCREEN.pw}x${SCREEN.ph}|${iso(now.date)}|${periodIndex(now)}|${data._hash}|${unread(data).length}`; // polled replies change data after load
   let b = BODY_CACHE.get(key);
   if (!b) {
     const c = renderBody(data, view, now);
-    b = { img: c.g, zones: c.zones, piece: encodeRows(c.g, SPLIT, H, true) };
+    b = { img: c.g, zones: c.zones, piece: encodeRows(c.g, splitRow(), SCREEN.ph, true) };
     BODY_CACHE.set(key, b);
     while (BODY_CACHE.size > 8) BODY_CACHE.delete(BODY_CACHE.keys().next().value);
   }
   return b;
 }
 
-function renderPage(kind, data, st, { now, loc, wx, battery, fl, wifi }) {
-  if (kind === "light") return assemblePNG(W, H, [encodeRows(renderLight(fl, wifi, st.tab).g, 0, H, true)]);
-  if (kind === "lock") return assemblePNG(W, H, [encodeRows(renderLock(data, now, loc, wx, battery).g, 0, H, true)]);
-  if (kind === "compose") return assemblePNG(W, H, [encodeRows(renderCompose(data, st, now).g, 0, H, true)]);
+function renderPage(kind, data, st, { now, loc, wx, battery, fl, wifi, screen }) {
+  setScreen(...screen); // right before the synchronous render: another request may have set another size meanwhile
+  const full = (c) => assemblePNG(SCREEN.pw, SCREEN.ph, [encodeRows(c.g, 0, SCREEN.ph, true)]);
+  if (kind === "light") return full(renderLight(fl, wifi, st.tab));
+  if (kind === "lock") return full(renderLock(data, now, loc, wx, battery));
+  if (kind === "compose") return full(renderCompose(data, st, now));
   const b = body(data, st.v || "day", now);
   drawHeader(b.img, now);
-  return assemblePNG(W, H, [encodeRows(b.img, 0, SPLIT, false), b.piece]);
+  return assemblePNG(SCREEN.pw, SCREEN.ph, [encodeRows(b.img, 0, splitRow(), false), b.piece]);
 }
 
 function hit(zones, x, y) {
@@ -664,7 +674,7 @@ export default {
       }
       if (changed) ctx.waitUntil(save(env, data));
       if (fromKindle) ctx.waitUntil(noteSeen(env, url, bat));
-      const bytes = renderPage(kind, data, st, { now, loc, wx, battery: bat, fl: readFl(url), wifi: readWifi(url) });
+      const bytes = renderPage(kind, data, st, { now, loc, wx, battery: bat, fl: readFl(url), wifi: readWifi(url), screen: readScreen(url) });
       return png(bytes, fromKindle ? { "X-Kindle-Command": data.kindle_command || "run" } : {});
     }
 
@@ -673,9 +683,10 @@ export default {
       if (!Number.isFinite(x) || !Number.isFinite(y)) return json({ error: "x and y needed" }, 400);
       const st = decodeState(url.searchParams.get("s"), now);
       const fl = readFl(url);
+      setScreen(...readScreen(url)); // the tap is in device pixels; the zones are in layout units
       const zones = st.m === "c" ? renderCompose(data, st, now).zones
         : st.m === "l" ? renderLight(fl, {}, st.tab).zones : body(data, st.v || "day", now).zones;
-      const res = applyAction(hit(zones, x, y), st, data, now, fl);
+      const res = applyAction(hit(zones, x / SCREEN.s, y / SCREEN.s), st, data, now, fl);
       if (res.write) await save(env, data);
       if (res.send) {
         const ok = await sendTelegram(await tgConf(env), `${data.child_name || "Kindle"}: ${res.send}`);

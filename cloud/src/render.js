@@ -1,8 +1,40 @@
 // Kindle display pages (1072x1448), German or English (setLang).
 // Pages: home (Day / Week / Month tabs + add button), lock (big clock, name), compose (add).
-import { Img, fit, clip, textWidth } from "./raster.js";
+import { Img, fit as fitPx, clip as clipPx, textWidth as widthPx } from "./raster.js";
 
-export const W = 1072, H = 1448;
+// Every layout number in this file is in Paperwhite 3 units (1072 x 1448). setScreen() scales the drawing to the
+// Kindle's real screen: by the smaller of the two ratios, so a page keeps at least its full Paperwhite 3 height,
+// and W / H become the logical size of that screen (a wider screen gets a little more logical width).
+export let W = 1072, H = 1448;
+export const SCREEN = { pw: 1072, ph: 1448, s: 1 }; // device pixels and scale of the current render
+let SC = 1;
+// shortcut: module-level screen like setLang; call setScreen right before each synchronous render
+export function setScreen(pw = 1072, ph = 1448) {
+  SC = Math.min(pw / 1072, ph / 1448);
+  W = Math.round(pw / SC); H = Math.round(ph / SC);
+  Object.assign(SCREEN, { pw, ph, s: SC });
+}
+const px = (size) => Math.max(1, Math.round(size * SC)); // font size in device pixels; raster snaps to the atlas
+// text measuring in layout units
+const textWidth = (str, size, bold) => widthPx(str, px(size), bold) / SC;
+const fit = (str, maxW, size, bold = true) => fitPx(str, maxW * SC, px(size), bold) / SC;
+const clip = (str, maxW, size, bold) => clipPx(str, maxW * SC, px(size), bold);
+
+/** The drawing surface: takes layout units, draws device pixels. w / p are the device image for the PNG encoder. */
+class Gfx {
+  constructor(pw, ph, s) { this.img = new Img(pw, ph); this.s = s; }
+  get w() { return this.img.w; }
+  get h() { return this.img.h; }
+  get p() { return this.img.p; }
+  rect(x0, y0, x1, y1, c) { const s = this.s; this.img.rect(x0 * s, y0 * s, x1 * s, y1 * s, c); }
+  box(b, r, o = {}) { const s = this.s; this.img.box(b.map((v) => v * s), r * s, { ...o, width: (o.width || 0) * s }); }
+  disc(x, y, r, c) { const s = this.s; this.img.disc(x * s, y * s, r * s, c); }
+  ring(x, y, r, w, c, bg) { const s = this.s; this.img.ring(x * s, y * s, r * s, w * s, c, bg); }
+  poly(pts, c) { this.img.poly(pts.map(([x, y]) => [x * this.s, y * this.s]), c); }
+  line(x0, y0, x1, y1, w, c, round) { const s = this.s; this.img.line(x0 * s, y0 * s, x1 * s, y1 * s, w * s, c, round); }
+  polyline(pts, w, c) { this.img.polyline(pts.map(([x, y]) => [x * this.s, y * this.s]), w * this.s, c); }
+  text(x, y, str, size, bold, color, anchor) { return this.img.text(x * this.s, y * this.s, str, px(size), bold, color, anchor) / this.s; }
+}
 export const PERIODS = [["morning"], ["afternoon"], ["night"]];
 const pad2 = (n) => String(n).padStart(2, "0");
 
@@ -248,23 +280,24 @@ function pill(g, box, label, size, on, { textColor = null, outline = 0 } = {}) {
 }
 
 class Canvas {
-  constructor() { this.g = new Img(W, H); this.zones = []; }
+  constructor() { this.g = new Gfx(SCREEN.pw, SCREEN.ph, SC); this.zones = []; }
   zone(box, action) { this.zones.push([...box, action]); }
 }
 
 // ------------------------------------------------------------ header (every minute)
 // One row: time and date as text on the left, message / add / settings buttons on the right.
 // Only the text part changes every minute; the buttons are drawn with the cached body.
-const BTN_Y0 = 22, BTN_Y1 = 102, BTN_W = 112, BTN_GAP = 16, TEXT_R = W - 30 - 3 * BTN_W - 2 * BTN_GAP - 20;
+const BTN_Y0 = 22, BTN_Y1 = 102, BTN_W = 112, BTN_GAP = 16;
+const textR = () => W - 30 - 3 * BTN_W - 2 * BTN_GAP - 20; // the screen width can change between renders
 const TABS_Y0 = 126, TABS_Y1 = 200, CONTENT_Y = 224;
 
 export function drawHeader(g, now) {
-  g.rect(0, 0, TEXT_R, SPLIT, 255);
+  g.rect(0, 0, textR(), SPLIT, 255);
   const cy = (BTN_Y0 + BTN_Y1) / 2;
   const tw = g.text(30, cy, `${pad2(now.hour)}:${pad2(now.minute)}`, 72, true, 0, "lm");
   const date = S.headerDate(now.date, S);
   const x = 30 + tw + 28;
-  g.text(x, cy + 2, date, fit(date, TEXT_R - x, 38, false), false, 0, "lm");
+  g.text(x, cy + 2, date, fit(date, textR() - x, 38, false), false, 0, "lm");
 }
 
 // ------------------------------------------------------------ home body

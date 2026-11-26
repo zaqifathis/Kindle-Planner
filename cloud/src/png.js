@@ -53,7 +53,9 @@ function u32(out, pos, v) {
 // Deflate (fixed Huffman, distance-1 runs) and adler32 in one pass.
 // Adler for a run of r bytes of value v: a += r*v; b += r*a_before + v*r*(r+1)/2.
 function deflateRLE(p, w, h, out, o, final = true) {
-  const p32 = new Uint32Array(p.buffer, p.byteOffset, p.length >>> 2);
+  // 4-byte reads use the whole buffer and absolute offsets: a row (or a subarray) only starts 4-aligned
+  // when the width is a multiple of 4 (1072 is, 758 is not).
+  const base = p.byteOffset, p32 = new Uint32Array(p.buffer, 0, p.buffer.byteLength >>> 2);
   let bitbuf = 0, bitcnt = 0;
   let A = 1, B = 0;
   // BFINAL, BTYPE=01 (fixed Huffman)
@@ -69,13 +71,13 @@ function deflateRLE(p, w, h, out, o, final = true) {
       const v = p[row + x];
       let e = x + 1;
       // extend run: byte steps until aligned, then 4 bytes at a time
-      while (e < w && (e & 3) && p[row + e] === v) e++;
-      if (e < w && !(e & 3) && p[row + e] === v) {
+      while (e < w && ((base + row + e) & 3) && p[row + e] === v) e++;
+      if (e < w && !((base + row + e) & 3) && p[row + e] === v) {
         const v4 = (v * 0x01010101) >>> 0;
-        let q = (row + e) >>> 2;
-        const qEnd = (row + w) >>> 2;
+        let q = (base + row + e) >>> 2;
+        const qEnd = (base + row + w) >>> 2;
         while (q < qEnd && p32[q] === v4) q++;
-        e = (q << 2) - row;
+        e = (q << 2) - base - row;
         while (e < w && p[row + e] === v) e++;
       }
       const run = e - x;

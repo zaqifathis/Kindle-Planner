@@ -35,6 +35,40 @@ for (const l of R.LANGS) {
 const keys = () => R.renderCompose(data, R.composeDefaults(now), now).zones.map((z) => z[4]);
 R.setLang("en"); assert.ok(keys().includes("key:'") && !keys().includes("key:ß")); // QWERTY layout
 R.setLang("de"); assert.ok(keys().includes("key:ß"));
+// PNG encoder: exact pixels back at widths that are not a multiple of 4, in two pieces like header + body
+const { inflateSync } = await import("node:zlib");
+const P = await import("../src/png.js");
+function decode(png) { // grayscale 8-bit, filter 0 rows only (what encodeRows writes)
+  let i = 8, idat = [], w = 0;
+  while (i < png.length) {
+    const len = png.readUInt32BE(i), type = png.toString("latin1", i + 4, i + 8);
+    if (type === "IHDR") w = png.readUInt32BE(i + 8);
+    if (type === "IDAT") idat.push(png.subarray(i + 8, i + 8 + len));
+    i += 12 + len;
+  }
+  const raw = inflateSync(Buffer.concat(idat)), rows = [];
+  for (let r = 0; r * (w + 1) < raw.length; r++) { assert.equal(raw[r * (w + 1)], 0); rows.push(raw.subarray(r * (w + 1) + 1, (r + 1) * (w + 1))); }
+  return Buffer.concat(rows);
+}
+for (const [w, h] of [[758, 1024], [757, 33], [1072, 40], [1236, 21], [1264, 17]]) {
+  const img = { w, h, p: new Uint8Array(w * h) };
+  for (let k = 0; k < img.p.length; k++) img.p[k] = (k * 7919) % 13 < 9 ? 255 : (k >> 5) % 3 ? 0 : 128; // long runs and short ones
+  const split = 7;
+  const png = Buffer.from(P.assemblePNG(w, h, [P.encodeRows(img, 0, split, false), P.encodeRows(img, split, h, true)]));
+  assert.ok(decode(png).equals(Buffer.from(img.p)), `png ${w}x${h}`);
+}
+
+// other screen sizes: every page renders at the Kindle's own size, and taps scale back to layout units
+for (const [pw, ph] of [[758, 1024], [1236, 1648], [1264, 1680]]) {
+  R.setScreen(pw, ph);
+  const c = R.renderBody(data, "day", now);
+  assert.deepEqual([c.g.w, c.g.h], [pw, ph]);
+  R.renderLock(data, now, {}, { code: 3, temp: 5, lo: 1, hi: 7 }, 80); R.renderLight(12, {}, "l");
+  R.renderCompose(data, R.composeDefaults(now), now); R.renderCompose(data, { ...R.composeDefaults(now), t: "m" }, now);
+  assert.ok(R.W >= 1072 && R.H >= 1448, "the layout keeps at least the Paperwhite 3 size");
+}
+R.setScreen();
+
 // a habit added today does not change earlier days
 const old = { id: "a", title: "Old", days: R.ALL_DAYS }, added = { id: "b", title: "New", days: R.ALL_DAYS, from: "2026-11-25" };
 const hd = { ...data, habits: { morning: [old, added], afternoon: [], night: [] }, done: { "2026-11-24": ["a"] } };

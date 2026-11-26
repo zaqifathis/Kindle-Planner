@@ -11,8 +11,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 FONTS = {"b": os.path.join(ROOT, "fonts", "NotoSans-Bold.ttf"),
          "r": os.path.join(ROOT, "fonts", "NotoSans-Regular.ttf")}
-SIZES = {"b": [18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 40, 44, 48, 52, 56, 62, 72],
-         "r": [18, 20, 22, 24, 26, 28, 30, 32, 34, 38, 42, 48]}
+# 14 and 16 are for small screens such as the Paperwhite 1 and 2 (758 px wide), see setScreen in render.js
+SIZES = {"b": [14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 40, 44, 48, 52, 56, 62, 72],
+         "r": [14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 38, 42, 48]}
 BIG = {"b": [110, 140, 220]}  # display sizes: limited character set
 CHARS = "".join(chr(c) for c in range(32, 127)) + "".join(chr(c) for c in range(160, 256)) + "–—…‘’“”€•·"
 BIG_CHARS = {110: "".join(chr(c) for c in range(32, 127)) + "ÄÖÜäöüß",

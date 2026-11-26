@@ -13,6 +13,7 @@ export async function load(url, ctx, next) {
 const R = await import("../src/render.js");
 const P = await import("../src/png.js");
 R.setLang(process.env.LANG_KINDLE || "de"); // LANG_KINDLE=en node tools/bench.mjs
+R.setScreen(...(process.env.SCREEN || "1072x1448").split("x").map(Number)); // SCREEN=1236x1648 node tools/bench.mjs
 // Sample data in the current model (v4); server/data.json is the old v2 format.
 const today = new Date().toISOString().slice(0, 10);
 const hab = (p, ...t) => t.map((title, i) => ({ id: `${p}${i}`, title }));
@@ -29,10 +30,11 @@ const data = {
 };
 const now = R.localNow("Europe/Berlin");
 const loc = { city: "Dresden" }, wx = { temp: 5.6, code: 3, hi: 6, lo: 3 };
-const full = (c) => P.assemblePNG(R.W, R.H, [P.encodeRows(c.g, 0, R.H, true)]);
+const { pw, ph, s } = R.SCREEN, split = Math.ceil(R.SPLIT * s); // device pixels
+const full = (c) => P.assemblePNG(pw, ph, [P.encodeRows(c.g, 0, ph, true)]);
 // home: body rows are encoded once (cached in the Worker), the header rows every minute
-const home = (view) => () => { const c = R.renderBody(data, view, now); const piece = P.encodeRows(c.g, R.SPLIT, R.H, true);
-  R.drawHeader(c.g, now); return P.assemblePNG(R.W, R.H, [P.encodeRows(c.g, 0, R.SPLIT, false), piece]); };
+const home = (view) => () => { const c = R.renderBody(data, view, now); const piece = P.encodeRows(c.g, split, ph, true);
+  R.drawHeader(c.g, now); return P.assemblePNG(pw, ph, [P.encodeRows(c.g, 0, split, false), piece]); };
 const pages = {
   day: home("day"), week: home("week"), month: home("month"),
   lock: () => full(R.renderLock(data, now, loc, wx, "43")),

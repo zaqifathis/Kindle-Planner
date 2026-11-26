@@ -25,6 +25,11 @@ if [ -n "$KINDLE_KEY" ]; then
   CURL="$CURL -H X-Kindle-Key:$KINDLE_KEY"
 fi
 
+# Screen size for the server, which draws every page at the Kindle's own size. Unreadable: Paperwhite 3.
+SCR=$(eips -i 2>/dev/null | sed -n 's/^ *xres: *\([0-9]*\) *yres: *\([0-9]*\).*/\1x\2/p' | head -n 1)
+case "$SCR" in [1-9][0-9]*x[1-9][0-9]*) ;; *) SCR=1072x1448 ;; esac
+echo "screen $SCR"
+
 # Stopping the GUI also signals processes started from KUAL. Ignore that.
 trap '' HUP TERM INT
 
@@ -86,7 +91,7 @@ show() {
     S=$(cat "$STATE" 2>/dev/null)
     L=0; [ -f "$LOCKED" ] && L=1
     rm -f "$IMG" "$HDR"
-    if $CURL -m 20 -D "$HDR" -o "$IMG" "$SERVER/dashboard.png?bat=$BAT&lock=$L&s=$S&fl=$(cur_light)&$(wifi_q)" \
+    if $CURL -m 20 -D "$HDR" -o "$IMG" "$SERVER/dashboard.png?bat=$BAT&lock=$L&s=$S&fl=$(cur_light)&scr=$SCR&$(wifi_q)" \
        && grep -q " 200" "$HDR" && [ -s "$IMG" ]; then
       if [ "$1" = "full" ] || [ $((n % FULL_EVERY)) -eq 0 ]; then
         eips -f -g "$IMG" >/dev/null 2>&1
@@ -159,7 +164,7 @@ pd_wake() {
 # Touch: each tap goes to the server, which returns the new UI state.
 (
   READY=0
-  lua "$DIR/bin/touch.lua" /dev/input/event1 | while read -r X Y T; do
+  lua "$DIR/bin/touch.lua" auto | while read -r X Y T; do
     [ -f "$LOCKED" ] && continue          # locked: ignore the touch screen
     # Drop taps made while the last one was still loading; a repeated tap would undo a tick.
     # shortcut: whole seconds, so a tap in the same second as the last redraw still counts.
@@ -167,7 +172,7 @@ pd_wake() {
     date +%s > "$LASTTAP"
     S=$(cat "$STATE" 2>/dev/null)
     rm -f "$TAPHDR"
-    NEW=$($CURL -m 10 -D "$TAPHDR" "$SERVER/tap?x=$X&y=$Y&s=$S&fl=$(cur_light)")
+    NEW=$($CURL -m 10 -D "$TAPHDR" "$SERVER/tap?x=$X&y=$Y&s=$S&fl=$(cur_light)&scr=$SCR")
     if [ $? -eq 0 ]; then
       printf '%s' "$NEW" > "$STATE"
       if grep -qi '^X-Kindle-Draft:' "$TAPHDR" 2>/dev/null; then touch "$DRAFT"; else rm -f "$DRAFT"; fi
@@ -184,7 +189,7 @@ TOUCH_PID=$!
 
 # Power button: toggle the lock screen.
 (
-  lua "$DIR/bin/touch.lua" /dev/input/event0 key | while read -r K; do
+  lua "$DIR/bin/touch.lua" auto key | while read -r K; do
     # powerd also sees the power button and goes screensaver -> suspend
     # (Wi-Fi off, loop frozen). Pull it straight back to "active".
     P0=$(pd_state)
