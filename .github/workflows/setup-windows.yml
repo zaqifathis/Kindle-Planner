@@ -1,9 +1,13 @@
-# Builds the Windows installer of the Setup app. Run it by hand: Actions > Build Setup (Windows) > Run workflow.
-# The .exe is attached to the run as an artifact (Summary > Artifacts).
+# Builds the Windows installer of the Setup app.
+# A published release starts it, and the .exe is attached to that release (the download page links to it).
+# Run by hand (Actions > Build Setup (Windows) > Run workflow), the .exe is only a run artifact (Summary > Artifacts).
 name: Build Setup (Windows)
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
 permissions:
-  contents: read
+  contents: write # upload the .exe to the release
 jobs:
   windows:
     runs-on: windows-latest
@@ -28,3 +32,7 @@ jobs:
           name: kid-planner-setup-windows
           path: setup/dist/*.exe
           if-no-files-found: error
+      - if: github.event_name == 'release'
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/KidPlannerSetup-windows.exe --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}

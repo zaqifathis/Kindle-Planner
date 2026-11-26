@@ -83,8 +83,10 @@ The web page `docs/index.html` (GitHub Pages) links to the newest GitHub Release
 To publish a new version:
 
 1. Raise `version` in `package.json`.
-2. Build the signed `.dmg` on the Mac, and the `.exe` with the Windows workflow.
-3. On GitHub, open Releases > Draft a new release. Make a tag such as `v1.1.0`, attach both files, and click Publish release.
+2. Build the signed `.dmg` on the Mac (see below).
+3. Publish a release with the `.dmg`, for example `gh release create v1.1.0 dist/KidPlannerSetup-mac.dmg`.
+
+When the release is published, the Windows workflow builds the `.exe` and attaches it to the same release. This takes about 10 minutes.
 
 To turn on the web page, open Settings > Pages on GitHub. Under Build and deployment, select Deploy from a branch, then `main` and `/docs`. The repository must be public, or the GitHub plan must allow Pages for private repositories. Release downloads work for other people only when the repository is public.
 
