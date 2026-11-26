@@ -335,6 +335,8 @@ footer{padding:30px 0 50px;color:var(--muted);font-size:14px}
       <div class="r"><select id="set-klang" class="btn"><option value="en">English</option><option value="de">Deutsch</option></select></div>
       <div class="r" style="margin-top:14px"><button class="btn primary" id="save-set" data-i18n="k.save">Save</button><span class="status" id="set-status" role="status"></span></div>
       <p style="opacity:.75;margin-top:26px;font-size:15px" data-i18n="k.help">Press the Kindle's power button to lock it: the light turns off and the lock screen shows the clock and the name. Press again to unlock.</p>
+      <h3 style="margin-top:34px" data-i18n="tg.title">Family messages (Telegram)</h3>
+      <div id="tg"></div>
     </div>
   </div>
 </section>
@@ -389,6 +391,16 @@ const I18N = {
     "k.wifi": "WLAN", "k.battery": "Battery",
     "k.stateStop": "The Kindle is in normal reader mode.", "k.stateRun": "The Kindle shows the planner display.",
     footer: "Kid Planner · Kindle display + web dashboard", signedIn: "signed in as", signOut: "Sign out",
+    "tg.title": "Family messages (Telegram)", "tg.connected": (g) => `Connected to the group "${g}". Messages from the group show on the Kindle, and the child can answer.`,
+    "tg.secrets": "Set up with server secrets.", "tg.steps": [
+      "In Telegram, open @BotFather and send /newbot. Follow the questions. BotFather sends you a token.",
+      "Send /setprivacy to @BotFather, choose your bot, then choose Disable. Without this, the bot cannot read the group.",
+      "Add the bot to your family group, then send any message in the group.",
+      "Paste the token here and click Connect."],
+    "tg.token": "Bot token", "tg.connect": "Connect", "tg.off": "Disconnect", "tg.names": "Names on the Kindle, one per line: Telegram name = name on the Kindle",
+    "tg.saveNames": "Save names", "tg.bad_token": "Telegram does not know this token. Copy it again from BotFather.",
+    "tg.no_group": "The bot is not in a group yet. Add it to your family group, send a message there, then click Connect again.",
+    "tg.busy": "Telegram is busy. Wait one minute, then click Connect again.",
     password: "Password", logIn: "Log in", wrongPw: "Wrong password.", locked: (m) => `Too many wrong tries. Wait ${m} min, then try again.`,
     notSetUp: "This planner is not set up yet. Open the Kid Planner Setup app to choose a password.",
     noAccess: "This account has no access to the planner.", noAccess2: "and sign in with an allowed Google account.",
@@ -436,6 +448,16 @@ const I18N = {
     "k.wifi": "WLAN", "k.battery": "Akku",
     "k.stateStop": "Der Kindle ist im normalen Lesemodus.", "k.stateRun": "Der Kindle zeigt den Planer.",
     footer: "Kinderplaner · Kindle-Anzeige + Web-Dashboard", signedIn: "angemeldet als", signOut: "Abmelden",
+    "tg.title": "Familien-Nachrichten (Telegram)", "tg.connected": (g) => `Verbunden mit der Gruppe „${g}“. Nachrichten aus der Gruppe erscheinen auf dem Kindle, und das Kind kann antworten.`,
+    "tg.secrets": "Über Server-Secrets eingerichtet.", "tg.steps": [
+      "Öffne in Telegram @BotFather und sende /newbot. Beantworte die Fragen. BotFather schickt dir einen Token.",
+      "Sende /setprivacy an @BotFather, wähle deinen Bot und dann Disable. Sonst kann der Bot die Gruppe nicht lesen.",
+      "Füge den Bot zu deiner Familiengruppe hinzu und schreibe eine Nachricht in die Gruppe.",
+      "Füge den Token hier ein und klicke auf Verbinden."],
+    "tg.token": "Bot-Token", "tg.connect": "Verbinden", "tg.off": "Trennen", "tg.names": "Namen auf dem Kindle, einer pro Zeile: Telegram-Name = Name auf dem Kindle",
+    "tg.saveNames": "Namen speichern", "tg.bad_token": "Telegram kennt diesen Token nicht. Kopiere ihn noch einmal von BotFather.",
+    "tg.no_group": "Der Bot ist noch in keiner Gruppe. Füge ihn zur Familiengruppe hinzu, schreibe dort eine Nachricht und klicke erneut auf Verbinden.",
+    "tg.busy": "Telegram ist gerade beschäftigt. Warte eine Minute und klicke dann erneut auf Verbinden.",
     password: "Passwort", logIn: "Anmelden", wrongPw: "Falsches Passwort.", locked: (m) => `Zu viele falsche Versuche. Warte ${m} Min. und versuche es dann erneut.`,
     notSetUp: "Dieser Planer ist noch nicht eingerichtet. Öffne die Kid Planner Setup-App und wähle ein Passwort.",
     noAccess: "Dieses Konto hat keinen Zugriff auf den Planer.", noAccess2: "und melde dich mit einem erlaubten Google-Konto an.",
@@ -899,6 +921,7 @@ function renderKindle() {
   if (document.activeElement !== $("set-name")) $("set-name").value = S.child_name || "";
   if (document.activeElement !== $("set-lock")) $("set-lock").value = S.lock_name || "";
   if (document.activeElement !== $("set-klang")) $("set-klang").value = S.kindle_lang || "de";
+  renderTg();
   refreshPreview();
 }
 function renderSeen() {
@@ -915,6 +938,37 @@ function renderSeen() {
   ];
   box.replaceChildren(...lines);
 }
+let tgShown = null;
+function renderTg() {
+  const key = LANG + JSON.stringify(S.telegram);
+  if (key === tgShown) return; // keep what the parent is typing
+  tgShown = key;
+  const tg = S.telegram, box = $("tg"), msg = el("span", { class: "status", role: "status", id: "tg-status" });
+  const field = "font-size:16px;padding:8px 12px;width:100%;max-width:520px";
+  if (tg && tg.secrets) return box.replaceChildren(el("p", {}, t("tg.secrets")));
+  if (tg) {
+    const names = el("textarea", { id: "tg-names", rows: "3", style: field }, Object.entries(tg.names).map(([k, v]) => `${k} = ${v}`).join("\n"));
+    return box.replaceChildren(el("p", {}, t("tg.connected", tg.title)),
+      el("label", { for: "tg-names" }, t("tg.names")), el("div", { class: "r" }, names),
+      el("div", { class: "r", style: "margin-top:10px" },
+        el("button", { class: "btn primary", onclick: async () => {
+          const map = Object.fromEntries(names.value.split("\n").map((l) => l.split("=").map((x) => x.trim())).filter((p) => p.length === 2 && p[0] && p[1]));
+          await api("/api/telegram", { names: map }); flash("tg-status", t("saved")); load();
+        } }, t("tg.saveNames")), " ",
+        el("button", { class: "btn", onclick: async () => { await api("/api/telegram", { off: true }); load(); } }, t("tg.off")), msg));
+  }
+  const tok = el("input", { id: "tg-token", type: "password", autocomplete: "off", style: field });
+  const go = el("button", { class: "btn primary", onclick: async () => {
+    go.disabled = true; msg.textContent = "…";
+    const r = await fetch("/api/telegram", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: tok.value }) });
+    const j = await r.json().catch(() => ({}));
+    go.disabled = false;
+    if (r.ok) return load();
+    msg.textContent = t("tg." + j.error) || j.error;
+  } }, t("tg.connect"));
+  box.replaceChildren(el("ol", {}, ...t("tg.steps").map((x) => el("li", {}, x))),
+    el("label", { for: "tg-token" }, t("tg.token")), el("div", { class: "r" }, tok), el("div", { class: "r", style: "margin-top:10px" }, go, " ", msg));
+}
 function refreshPreview() { $("kprev").src = "/page.png?view=" + pv + "&t=" + Date.now(); }
 $("ktabs").onclick = (e) => {
   const v = e.target.dataset && e.target.dataset.v; if (!v) return;
@@ -929,7 +983,7 @@ $("save-set").onclick = async () => {
 };
 
 load();
-setInterval(() => { if (!editing && !["INPUT", "SELECT"].includes(document.activeElement.tagName)) load(); }, 60000);
+setInterval(() => { if (!editing && !["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) load(); }, 60000);
 </script>
 </body>
 </html>

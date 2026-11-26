@@ -55,6 +55,33 @@ assert.equal((await call("/kindle/command", { key: kindleKey })).status, 200);
 assert.equal((await call("/kindle/command", { key: kindleKey.replace(/.$/, "x") })).status, 401);
 assert.equal((await call("/api/state", { key: kindleKey })).status, 401, "Kindle key cannot open the parent API");
 
+// Telegram from the dashboard: token checked, group found, token never sent back or exported
+const TOKEN = "123456:" + "A".repeat(35);
+const tgCalls = [];
+globalThis.fetch = async (u) => {
+  const m = String(u).match(/api\.telegram\.org\/bot([^/]+)\/(\w+)/);
+  tgCalls.push(m && m[2]);
+  if (!m || m[1] !== TOKEN) return new Response(JSON.stringify({ ok: false }), { status: 401 });
+  if (m[2] === "getMe") return new Response(JSON.stringify({ ok: true }));
+  const result = String(u).includes("timeout=25")
+    ? [{ update_id: 7, message: { chat: { id: -42 }, from: { first_name: "Alex" }, date: Math.floor(Date.now() / 1000), text: "Hallo" } }]
+    : [{ update_id: 5, my_chat_member: { chat: { id: -42, type: "group", title: "Family" } } }];
+  return new Response(JSON.stringify({ ok: true, result }));
+};
+const api = (path, body) => call(path, { cookie, body });
+assert.equal((await (await api("/api/telegram", { token: "123456:wrong-token-wrong-token-wrong-token" })).json()).error, "bad_token");
+r = await api("/api/telegram", { token: TOKEN });
+assert.equal(r.status, 200); assert.equal((await r.json()).title, "Family");
+assert.equal((await api("/api/telegram", { names: { Alex: "Papa", "": "x" } })).status, 200);
+const state = await (await call("/api/state", { cookie })).json();
+assert.deepEqual(state.telegram, { title: "Family", names: { Alex: "Papa" } });
+assert.ok(!JSON.stringify(state).includes(TOKEN), "state hides the token");
+assert.ok(!(await (await call("/api/export", { cookie })).text()).includes(TOKEN), "export hides the token");
+assert.equal(await (await call("/kindle/wait", { key: kindleKey })).text(), "new", "Kindle long poll uses the KV token");
+assert.equal(JSON.parse(kv.get("data")).messages.at(-1).from, "Papa");
+assert.equal((await api("/api/telegram", { off: true })).status, 200);
+assert.equal(await (await call("/kindle/wait", { key: kindleKey })).text(), "off");
+
 // logout clears the cookie; a reset (new record) ends old sessions
 assert.match((await call("/logout", { body: {} })).headers.get("Set-Cookie"), /Max-Age=0/);
 kv.set("auth", JSON.stringify((await newAuth("a new password")).record));

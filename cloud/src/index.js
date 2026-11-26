@@ -197,7 +197,22 @@ function toggle(data, dateStr, id) {
 }
 
 // ------------------------------------------------------------------ Telegram (Kindle -> family group)
-// Secrets: TG_TOKEN (from @BotFather), TG_CHAT (group chat id, negative number).
+// Set in the dashboard (KV key "telegram": token, chat, title, names); the old secrets TG_TOKEN,
+// TG_CHAT and TG_NAMES still work when that key is missing. Kept out of `data`, so exports hold no token.
+const TG_KEY = "telegram";
+async function tgConf(env) {
+  const t = (await env.KV.get(TG_KEY, "json")) || {};
+  return t.token ? { TG_TOKEN: t.token, TG_CHAT: t.chat, TG_NAMES: JSON.stringify(t.names || {}) } : env;
+}
+/** Checks the bot token and finds the group the bot was added to most recently. */
+async function tgConnect(token) {
+  const api = (m) => fetch(`https://api.telegram.org/bot${token}/${m}`, { signal: AbortSignal.timeout(8000) }).then((r) => r.json()).catch(() => ({}));
+  if (!/^\d+:[\w-]{30,}$/.test(token) || !(await api("getMe")).ok) return { error: "bad_token" };
+  const u = await api("getUpdates?timeout=0");
+  if (!u.ok) return { error: "busy" }; // another getUpdates is running: try again in a minute
+  const chat = u.result.map((x) => (x.message || x.my_chat_member || {}).chat).filter((c) => c && /group/.test(c.type)).at(-1);
+  return chat ? { token, chat: String(chat.id), title: String(chat.title || "").slice(0, 60) } : { error: "no_group" };
+}
 async function sendTelegram(env, text) {
   if (!env.TG_TOKEN || !env.TG_CHAT) return false;
   try {
@@ -241,7 +256,7 @@ function displayNames(env) {
 }
 
 /** Adds the group messages among the updates to data.messages. Returns how many it added. */
-function applyUpdates(env, data, updates) {
+function applyUpdates(env, data, updates, L) {
   let n = 0;
   const names = displayNames(env);
   for (const m of data.messages || []) if (!m.me && names[m.from]) m.from = names[m.from]; // messages from before a rename
@@ -252,7 +267,7 @@ function applyUpdates(env, data, updates) {
     let t = m.text || m.caption || "";
     if (t.startsWith("/")) continue;
     t = t.replace(/\s+/g, " ").replace(GLYPHS_OK, "").trim();
-    if (!t) t = m.photo ? "[Foto]" : m.sticker ? "[Sticker]" : m.voice ? "[Sprachnachricht]" : "[Emoji]";
+    if (!t) t = m.photo ? L.tgPhoto : m.sticker ? "[Sticker]" : m.voice ? L.tgVoice : "[Emoji]";
     const first = String(m.from.first_name || "");
     addMessage(data, { from: String(names[first] || first).slice(0, 30), text: t.slice(0, 300), at: m.date, me: 0 });
     n++;
@@ -608,12 +623,13 @@ export default {
 
     // Kindle long poll: "new" (redraw now), "none" (ask again), "off" (wait, then ask again)
     if (path === "/kindle/wait") {
-      if (!env.TG_TOKEN || !env.TG_CHAT) return text("off");
-      const updates = await waitTelegram(env, data.tg_offset || 0);
+      const tg = await tgConf(env);
+      if (!tg.TG_TOKEN || !tg.TG_CHAT) return text("off");
+      const updates = await waitTelegram(tg, data.tg_offset || 0);
       if (!updates) return text("off");
       if (!updates.length) return text("none");
       const fresh = await load(env, ctx); // the wait took up to 25 s: keep changes saved meanwhile
-      const n = applyUpdates(env, fresh, updates);
+      const n = applyUpdates(tg, fresh, updates, L);
       await save(env, fresh);
       return text(n ? "new" : "none");
     }
@@ -656,7 +672,7 @@ export default {
       const res = applyAction(hit(zones, x, y), st, data, now, fl);
       if (res.write) await save(env, data);
       if (res.send) {
-        const ok = await sendTelegram(env, `${data.child_name || "Kindle"}: ${res.send}`);
+        const ok = await sendTelegram(await tgConf(env), `${data.child_name || "Kindle"}: ${res.send}`);
         res.st = ok ? { ...res.st, s: "", sh: 1, f: 1, o: 0 } : { ...res.st, f: 2 };
         if (ok) {
           addMessage(data, { from: data.child_name || L.me, text: res.send, at: Math.floor(Date.now() / 1000), me: 1 });
@@ -682,6 +698,7 @@ export default {
         child_name: data.child_name || "", lock_name: data.lock_name || "", kindle_lang: data.kindle_lang || "de",
         kindle_command: data.kindle_command || "run", weather: wx, city: loc.city || "",
         seen: await env.KV.get(SEEN_KEY, "json"),
+        telegram: await env.KV.get(TG_KEY, "json").then((t) => (t ? { title: t.title, names: t.names || {} } : env.TG_TOKEN ? { title: "", names: {}, secrets: true } : null)),
       });
     }
     if (path === "/api/stats" && request.method === "GET") return json(stats(data, now));
@@ -701,6 +718,21 @@ export default {
       if (!(request.headers.get("Content-Type") || "").startsWith("application/json")) return json({ error: "JSON only" }, 415);
       let b;
       try { b = await request.json(); } catch { return json({ error: "bad json" }, 400); }
+      // Telegram: {token} connects, {names} renames senders, {off: true} disconnects
+      if (path === "/api/telegram") {
+        const old = await env.KV.get(TG_KEY, "json");
+        if (b.off) { await env.KV.delete(TG_KEY); return json({ ok: true }); }
+        if (b.names && typeof b.names === "object") {
+          if (!old) return json({ error: "not connected" }, 400);
+          const names = Object.fromEntries(Object.entries(b.names).slice(0, 20).map(([k, v]) => [String(k).trim().slice(0, 30), String(v).trim().slice(0, 30)]).filter(([k, v]) => k && v));
+          await env.KV.put(TG_KEY, JSON.stringify({ ...old, names }));
+          return json({ ok: true });
+        }
+        const r = await tgConnect(String(b.token || "").trim());
+        if (r.error) return json({ error: r.error }, 400);
+        await env.KV.put(TG_KEY, JSON.stringify({ ...r, names: (old && old.names) || {} }));
+        return json({ ok: true, title: r.title });
+      }
       const findHabit = (id) => {
         for (const [p] of PERIODS) { const i = data.habits[p].findIndex((h) => h.id === id); if (i >= 0) return [p, i]; }
         return null;
