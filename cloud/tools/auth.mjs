@@ -5,7 +5,7 @@
 import { webcrypto as crypto } from "node:crypto";
 import { writeFileSync } from "node:fs";
 
-export const MIN_PASSWORD = 10;
+export const MIN_PASSWORD = 10, MAX_PASSWORD = 200; // the Worker refuses longer ones at login
 const ITER = 20000; // about 4 ms on a Worker, inside the free plan's 10 ms CPU
 const hex = (b) => Buffer.from(b).toString("hex");
 const rand = (n) => hex(crypto.getRandomValues(new Uint8Array(n)));
@@ -20,6 +20,7 @@ export async function passwordHash(password, salt = rand(16), iter = ITER) {
  *  unless the current one is passed in (a password reset then needs no Kindle reinstall). */
 export async function newAuth(password, kindleKey = rand(24)) {
   if (String(password).length < MIN_PASSWORD) throw new Error(`The password needs at least ${MIN_PASSWORD} characters.`);
+  if (String(password).length > MAX_PASSWORD) throw new Error(`The password can have at most ${MAX_PASSWORD} characters.`);
   const kindle = hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(kindleKey)));
   return { record: { v: 1, ...(await passwordHash(password)), kindle, session: rand(32) }, kindleKey };
 }

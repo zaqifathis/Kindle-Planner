@@ -13,26 +13,33 @@ globalThis.caches = { default: { match: async () => new Response(JSON.stringify(
 
 const { newAuth } = await import("./auth.mjs");
 const worker = (await import("../src/index.js")).default;
+const R = await import("../src/render.js");
 const kv = new Map();
-const env = { KV: {
-  get: async (k, type) => (kv.has(k) ? (type === "json" ? JSON.parse(kv.get(k)) : kv.get(k)) : null),
-  put: async (k, v) => { kv.set(k, v); }, delete: async (k) => { kv.delete(k); },
-} };
+const tries = new Map(); // fake Workers rate limiter: 5 tries per key until reset
+const env = {
+  KV: {
+    get: async (k, type) => (kv.has(k) ? (type === "json" ? JSON.parse(kv.get(k)) : kv.get(k)) : null),
+    put: async (k, v) => { kv.set(k, v); }, delete: async (k) => { kv.delete(k); },
+  },
+  LOGIN_LIMIT: { limit: async ({ key }) => { tries.set(key, (tries.get(key) || 0) + 1); return { success: tries.get(key) <= 5 }; } },
+};
 const ctx = { waitUntil() {} };
-async function call(path, { cookie, key, body } = {}) {
+async function call(path, { cookie, key, body, ip } = {}) {
   const headers = {};
+  if (ip) headers["CF-Connecting-IP"] = ip;
   if (cookie) headers.Cookie = cookie;
   if (key) headers["X-Kindle-Key"] = key;
   if (body) headers["Content-Type"] = "application/json";
   return worker.fetch(new Request("https://kid.example" + path, body ? { method: "POST", headers, body: JSON.stringify(body) } : { headers }), env, ctx);
 }
-const login = (password) => call("/login", { body: { password } });
+const login = (password, ip) => call("/login", { body: { password }, ip });
 
 // not set up: everything refused, and the dashboard learns why
 let r = await call("/api/state");
 assert.equal(r.status, 401); assert.equal((await r.json()).setup, true);
 assert.equal((await login("anything-long")).status, 401);
 await assert.rejects(newAuth("short"));
+await assert.rejects(newAuth("x".repeat(201)), /at most 200/);
 
 const { record, kindleKey } = await newAuth("correct horse");
 kv.set("auth", JSON.stringify(record));
@@ -48,7 +55,6 @@ assert.equal((await call("/api/state", { cookie: cookie.slice(0, -2) + "00" })).
 const [exp] = cookie.slice(3).split(".");
 assert.equal((await call("/api/state", { cookie: `kp=${+exp + 999}.${cookie.split(".")[1]}` })).status, 401, "changed expiry");
 assert.equal((await call("/api/state", { cookie: `kp=1.${cookie.split(".")[1]}` })).status, 401, "expired");
-assert.ok(!kv.has("login_fails"), "success clears the counter");
 
 // Kindle key: only Kindle routes
 assert.equal((await call("/kindle/command", { key: kindleKey })).status, 200);
@@ -63,6 +69,12 @@ globalThis.fetch = async (u) => {
   tgCalls.push(m && m[2]);
   if (!m || m[1] !== TOKEN) return new Response(JSON.stringify({ ok: false }), { status: 401 });
   if (m[2] === "getMe") return new Response(JSON.stringify({ ok: true }));
+  if (m[2] === "sendMessage") { // a family reply arrives (and is saved by /kindle/wait) while the send runs
+    const d = JSON.parse(kv.get("data"));
+    d.messages.push({ from: "Papa", text: "ok", at: Math.floor(Date.now() / 1000), me: 0 });
+    kv.set("data", JSON.stringify(d));
+    return new Response(JSON.stringify({ ok: true }));
+  }
   const result = String(u).includes("timeout=25")
     ? [{ update_id: 7, message: { chat: { id: -42 }, from: { first_name: "Alex" }, date: Math.floor(Date.now() / 1000), text: "Hallo" } }]
     : [{ update_id: 5, my_chat_member: { chat: { id: -42, type: "group", title: "Family" } } }];
@@ -79,10 +91,36 @@ assert.ok(!JSON.stringify(state).includes(TOKEN), "state hides the token");
 assert.ok(!(await (await call("/api/export", { cookie })).text()).includes(TOKEN), "export hides the token");
 assert.equal(await (await call("/kindle/wait", { key: kindleKey })).text(), "new", "Kindle long poll uses the KV token");
 assert.equal(JSON.parse(kv.get("data")).messages.at(-1).from, "Papa");
+assert.equal(JSON.parse(kv.get("data")).tg_offset, 8);
+
+// Kindle taps: the server decides from the tap position and the UI state the Kindle sends
+const st = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+const tap = (s, x, y) => call(`/tap?x=${x}&y=${y}&s=${st(s)}`, { key: kindleKey });
+const SAVE = [800, 1360]; // the Save / Send button on the add page
+await tap({ m: "c", t: "e", s: "Swimming", r: "once", d: 1, w: 0, tm: 930, p: 0, sh: 0 }, ...SAVE);
+const ev = JSON.parse(kv.get("data")).events.at(-1);
+const tomorrow = R.iso(R.addDays(R.localNow("Europe/Berlin").date, 1));
+assert.deepEqual([ev.title, ev.date, ev.time, ev.repeat], ["Swimming", tomorrow, "15:30", "none"]);
+await tap({ m: "c", t: "h", s: "Read", r: "days", w: 0b0000101, tm: -1, p: 2, sh: 0 }, ...SAVE);
+assert.deepEqual(JSON.parse(kv.get("data")).habits.night.at(-1).days, [0, 2], "habit on Mon and Wed, evening");
+r = await tap({ m: "c", t: "m", s: "Hi Papa", sh: 0 }, ...SAVE);
+const texts = JSON.parse(kv.get("data")).messages.map((m) => m.text);
+assert.ok(texts.includes("Hi Papa") && texts.includes("ok"), "the sent message is saved and the reply that came during the send stays");
+
+// a Telegram first name like "constructor" is not looked up on Object.prototype
+globalThis.fetch = async (u) => new Response(JSON.stringify({ ok: true, result: String(u).includes("timeout=25")
+  ? [{ update_id: 9, message: { chat: { id: -42 }, from: { first_name: "constructor" }, date: Math.floor(Date.now() / 1000), text: "x" } }] : [] }));
+await call("/kindle/wait", { key: kindleKey });
+assert.equal(JSON.parse(kv.get("data")).messages.at(-1).from, "constructor");
+
+// CSV export: a name that starts like a formula is written as text
+await api("/api/habit", { title: "=1+1", period: "morning", days: [0, 1, 2, 3, 4, 5, 6] });
+assert.match(await (await call("/api/export?format=csv", { cookie })).text(), /,'=1\+1,/);
 assert.equal((await api("/api/telegram", { off: true })).status, 200);
 assert.equal(await (await call("/kindle/wait", { key: kindleKey })).text(), "off");
 
 // starter habits follow the Kindle language until the family changes or ticks something
+kv.delete("data"); // start from a new install
 const morning = async () => (await (await call("/api/state", { cookie })).json()).habits.morning.map((h) => h.title);
 assert.equal((await morning())[0], "Aufstehen & waschen");
 await api("/api/settings", { kindle_lang: "en" });
@@ -98,10 +136,15 @@ kv.set("auth", JSON.stringify((await newAuth("a new password")).record));
 assert.equal((await call("/api/state", { cookie })).status, 401, "reset logs out");
 assert.equal((await call("/kindle/command", { key: kindleKey })).status, 401, "reset changes the Kindle key");
 
-// lockout after 5 wrong tries, even for the right password
-for (let i = 0; i < 5; i++) await login("nope nope nope");
-r = await login("a new password");
+// 5 tries per minute per IP: the 6th waits, even with the right password, but other IPs (the parent) still log in
+tries.clear();
+for (let i = 0; i < 5; i++) await login("nope nope nope", "203.0.113.9");
+r = await login("a new password", "203.0.113.9");
 assert.equal(r.status, 429); assert.ok((await r.json()).wait > 0);
+assert.equal((await login("a new password", "198.51.100.7")).status, 200, "a stranger cannot lock the parent out");
+assert.equal((await login("x".repeat(201), "198.51.100.8")).status, 401, "too long");
+const noLimit = { ...env, LOGIN_LIMIT: undefined };
+assert.equal((await worker.fetch(new Request("https://kid.example/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }), noLimit, ctx)).status, 500, "no limiter, no login");
 
 // login needs JSON, so a cross-site form cannot post it
 assert.equal((await worker.fetch(new Request("https://kid.example/login", { method: "POST", body: "password=x" }), env, ctx)).status, 401);

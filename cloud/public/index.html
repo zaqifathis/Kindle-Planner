@@ -554,6 +554,7 @@ const fmtDate = (s, opts) => new Date(s + "T12:00").toLocaleDateString(LOCALE(),
 
 // ---------------------------------------------------------------- tooltip
 const tip = $("tip");
+const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 function showTip(e, html) { tip.innerHTML = html; tip.style.opacity = 1; moveTip(e); }
 function moveTip(e) {
   const x = e.clientX ?? (e.target.getBoundingClientRect().left + 10), y = e.clientY ?? e.target.getBoundingClientRect().top;
@@ -752,7 +753,7 @@ function hbar(label, rate, detail) {
     el("span", { class: "t", title: label }, label),
     el("div", { class: "track" }, el("div", { class: "fill", style: `width:${Math.max(0, rate * 100)}%` })),
     el("span", { class: "p" }, pct(rate)));
-  const html = `<b>${label}</b><br>${pct(rate)} · ${detail}`;
+  const html = `<b>${esc(label)}</b><br>${pct(rate)} · ${esc(detail)}`; // label can be a habit name typed by anyone in the family
   row.addEventListener("mouseenter", (e) => showTip(e, html));
   row.addEventListener("mousemove", moveTip);
   row.addEventListener("mouseleave", hideTip);

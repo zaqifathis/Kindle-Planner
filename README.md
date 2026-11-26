@@ -110,13 +110,10 @@ The Worker uses Cloudflare Access. Access signs every request that it lets throu
 If the Access configuration is missing, the Worker uses password mode. This is the mode the Setup app installs:
 
 - The KV key `auth` holds a PBKDF2 hash of the parent password, a SHA-256 hash of the Kindle key, and a session secret. `cloud/tools/auth.mjs` makes this record. The Worker has no page that creates a password, so a stranger cannot claim a new install.
-- `POST /login` checks the password and sets a signed cookie for 90 days. After 5 wrong tries, login locks for 1 minute, then 2, 4, and so on, up to 60 minutes.
+- `POST /login` checks the password and sets a signed cookie for 90 days. Each IP address gets at most 5 tries per minute. The Workers rate limiter (`LOGIN_LIMIT` in `wrangler.toml`) counts the tries, so a stranger cannot lock the parent out.
+- Log out deletes the cookie in that browser only. A password change in the Setup app ends the sessions on all devices.
 - The Kindle sends its key in the `X-Kindle-Key` header (`KINDLE_KEY` in `dash.conf`). The key works only on the Kindle routes.
 - If the `auth` key is missing, the Worker refuses all requests. All responses carry security headers (CSP, `frame-ancestors 'none'`, `no-referrer`, `nosniff`).
-
-### Legacy local server (`server/`)
-
-`server/server.py` is the first version: a Python and Pillow server for the home network on port 8765. The Cloudflare Worker replaced it. It stays in the repository for reference.
 
 ## Jailbreak
 
@@ -175,7 +172,7 @@ python3 tools/build_glyphs.py   # needs Pillow
 `.gitignore` excludes these files:
 
 - Secrets: `dash.conf`, `cloud/.secret`, `cloud/.kindle-token`, `.dev.vars`.
-- Personal data and backups: `server/data*.json`, `cloud/backups/`, `diag/`.
+- Personal data and backups: `cloud/backups/`, `diag/`.
 - Kindle runtime files and the `jailbreak/` downloads.
 
 ## Licenses

@@ -13,6 +13,12 @@ fallthrough = true
 [observability]
 enabled = true
 
+# Password login: at most 5 tries per minute per IP address (see login() in src/index.js)
+[[ratelimits]]
+name = "LOGIN_LIMIT"
+namespace_id = "1001"
+simple = { limit = 5, period = 60 }
+
 [[kv_namespaces]]
 binding = "KV"
 id = "d85e3dc7fb0f4533b3611a235454c308"

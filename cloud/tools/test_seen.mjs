@@ -19,7 +19,7 @@ globalThis.fetch = async () => new Response("{}", { status: 500 }); // no weathe
 globalThis.caches = { default: { match: async () => undefined, put: async () => {} } };
 const { record, kindleKey } = await (await import("./auth.mjs")).newAuth("test password");
 store.set("auth", JSON.stringify(record));
-const env = { KV };
+const env = { KV, LOGIN_LIMIT: { limit: async () => ({ success: true }) } };
 const cf = { city: "Dresden", region: "Saxony", country: "DE", latitude: "51.05", longitude: "13.74", timezone: "Europe/Berlin" };
 const hex = (s) => Buffer.from(s).toString("hex");
 

@@ -262,7 +262,8 @@ function displayNames(env) {
 function applyUpdates(env, data, updates, L) {
   let n = 0;
   const names = displayNames(env);
-  for (const m of data.messages || []) if (!m.me && names[m.from]) m.from = names[m.from]; // messages from before a rename
+  const rename = (n) => (Object.hasOwn(names, n) ? String(names[n]) : n); // "constructor" is not a rename
+  for (const m of data.messages || []) if (!m.me) m.from = rename(m.from); // messages from before a rename
   for (const u of updates) {
     data.tg_offset = Math.max(data.tg_offset || 0, u.update_id + 1);
     const m = u.message;
@@ -272,7 +273,7 @@ function applyUpdates(env, data, updates, L) {
     t = t.replace(/\s+/g, " ").replace(GLYPHS_OK, "").trim();
     if (!t) t = m.photo ? L.tgPhoto : m.sticker ? "[Sticker]" : m.voice ? L.tgVoice : "[Emoji]";
     const first = String(m.from.first_name || "");
-    addMessage(data, { from: String(names[first] || first).slice(0, 30), text: t.slice(0, 300), at: m.date, me: 0 });
+    addMessage(data, { from: rename(first).slice(0, 30), text: t.slice(0, 300), at: m.date, me: 0 });
     n++;
   }
   return n;
@@ -439,7 +440,10 @@ function history(data, now, maxDays) {
   return out;
 }
 
-const csvCell = (v) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+const csvCell = (v) => {
+  const s = /^[=+\-@\t\r]/.test(String(v)) ? "'" + v : String(v); // a spreadsheet must not read a name as a formula
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
 
 /** One row per scheduled habit per day, plus ticks of habits that were deleted since. */
 function exportCsv(data, now) {
@@ -548,7 +552,7 @@ async function authorize(request, url, env) {
 }
 
 // ---- password mode
-const AUTH_KEY = "auth", FAILS_KEY = "login_fails";
+const AUTH_KEY = "auth", MAX_PASSWORD = 200; // same limit as tools/auth.mjs
 const SESSION_DAYS = 90;
 const enc = new TextEncoder();
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -569,23 +573,21 @@ async function sessionValid(cookie, rec) {
 }
 const cookie = (v, age) => `kp=${v}; Path=/; Max-Age=${age}; Secure; HttpOnly; SameSite=Lax`;
 
-/** POST /login {password}. After 5 wrong tries, login locks for 1, 2, 4 ... up to 60 minutes. */
+/** POST /login {password}. At most 5 tries per minute per IP address (LOGIN_LIMIT in wrangler.toml).
+ *  Counted per IP, so a stranger cannot lock the parent out, and in the Workers rate limiter, not in KV,
+ *  so parallel requests cannot all read an old count. */
 async function login(request, env) {
+  if (!env.LOGIN_LIMIT) return json({ error: "LOGIN_LIMIT binding missing" }, 500); // never allow unlimited guessing
+  const { success } = await env.LOGIN_LIMIT.limit({ key: request.headers.get("CF-Connecting-IP") || "unknown" });
+  if (!success) return json({ error: "locked", wait: 60 }, 429);
   const rec = await env.KV.get(AUTH_KEY, "json");
   if (!rec) return json({ error: "not set up", setup: true }, 401);
-  const now = Math.floor(Date.now() / 1000);
-  const fails = (await env.KV.get(FAILS_KEY, "json")) || { n: 0, until: 0 };
-  if (fails.until > now) return json({ error: "locked", wait: fails.until - now }, 429);
   let password = "";
   try { password = String((await request.json()).password || ""); } catch {}
-  if (!password || !keyMatches(await pbkdf2(password.slice(0, 200), rec.salt, rec.iter), rec.hash)) {
-    fails.n++;
-    if (fails.n >= 5) fails.until = now + Math.min(3600, 60 * 2 ** (fails.n - 5));
-    await env.KV.put(FAILS_KEY, JSON.stringify(fails), { expirationTtl: 86400 });
+  if (!password || password.length > MAX_PASSWORD || !keyMatches(await pbkdf2(password, rec.salt, rec.iter), rec.hash)) {
     return json({ error: "wrong password" }, 401);
   }
-  if (fails.n) await env.KV.delete(FAILS_KEY);
-  const exp = now + SESSION_DAYS * 86400;
+  const exp = Math.floor(Date.now() / 1000) + SESSION_DAYS * 86400;
   return new Response(JSON.stringify({ ok: true }), {
     headers: { ...SEC, "Content-Type": "application/json", "Set-Cookie": cookie(`${exp}.${await hmac(rec.session, "s" + exp)}`, SESSION_DAYS * 86400) },
   });
@@ -678,9 +680,10 @@ export default {
         const ok = await sendTelegram(await tgConf(env), `${data.child_name || "Kindle"}: ${res.send}`);
         res.st = ok ? { ...res.st, s: "", sh: 1, f: 1, o: 0 } : { ...res.st, f: 2 };
         if (ok) {
-          addMessage(data, { from: data.child_name || L.me, text: res.send, at: Math.floor(Date.now() / 1000), me: 1 });
-          data.msg_seen = Math.floor(Date.now() / 1000);
-          await save(env, data);
+          const fresh = await load(env, ctx); // a reply may have been saved during the send: do not overwrite it
+          addMessage(fresh, { from: fresh.child_name || L.me, text: res.send, at: Math.floor(Date.now() / 1000), me: 1 });
+          fresh.msg_seen = Math.floor(Date.now() / 1000);
+          await save(env, fresh);
         }
       }
       const r = text(encodeState(res.st));
@@ -734,6 +737,8 @@ export default {
         const r = await tgConnect(String(b.token || "").trim());
         if (r.error) return json({ error: r.error }, 400);
         await env.KV.put(TG_KEY, JSON.stringify({ ...r, names: (old && old.names) || {} }));
+        data.tg_offset = 0; // update numbers belong to one bot: a new bot starts from its own first update
+        await save(env, data);
         return json({ ok: true, title: r.title });
       }
       const findHabit = (id) => {
