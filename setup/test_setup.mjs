@@ -13,6 +13,10 @@ const tmp = mkdtempSync(join(tmpdir(), "kp-setup-"));
 assert.ok(!/^id\s*=/m.test(readFileSync(join(payload, "cloud/wrangler.toml"), "utf8")));
 assert.ok(!existsSync(join(payload, "kindle/kiddash/dash.conf")));
 assert.ok(existsSync(join(payload, "kindle/kiddash/bin/loop.sh")) && existsSync(join(payload, "cloud/src/index.js")));
+// the Kindle runs these with sh and lua: a carriage return (Windows line ending) breaks them
+for (const f of ["bin/loop.sh", "bin/start.sh", "bin/autostart.sh", "bin/touch.lua", "dash.conf.example"]) {
+  assert.ok(!readFileSync(join(payload, "kindle/kiddash", f), "utf8").includes("\r"), f + " has CRLF");
+}
 
 // a reinstall keeps the KV id that wrangler wrote back
 const work = join(tmp, "work");

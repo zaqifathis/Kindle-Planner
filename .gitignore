@@ -28,3 +28,5 @@ cloud/auth.json
 setup/payload/
 setup/node_modules/
 setup/dist/
+setup/dist-small/
+.claude/worktrees/

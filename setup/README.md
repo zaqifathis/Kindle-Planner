@@ -40,6 +40,38 @@ Warning: Do not click Install with your own Cloudflare account. The app refuses 
 
 ## Building
 
-`npm run dist` builds the app for the current system: a `.dmg` on macOS, or an installer `.exe` on Windows. Build each system on that system (for example with a GitHub Actions matrix), because wrangler's esbuild binary is different for each system.
+`npm run dist` builds the app for the current system: an Apple silicon `.dmg` on macOS, or an installer `.exe` on Windows. Build each system on that system (for example with a GitHub Actions matrix), because wrangler's esbuild and workerd binaries are different for each system. The `.dmg` is about 215 MB. Most of it is workerd, which wrangler loads at startup even though Setup never runs it.
 
-Without code signing, macOS says that the app is from an unidentified developer. The person must right-click the app and select Open. Windows SmartScreen asks once in the same way. An Apple Developer ID removes the macOS warning.
+To test without signing:
+
+```sh
+CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac -c.mac.notarize=false
+```
+
+### Signing and notarization (macOS)
+
+An app that other people download must be signed with a Developer ID certificate and notarized by Apple. Otherwise macOS blocks it. You do these two steps once:
+
+1. Create the certificate. In Xcode, open Settings > Accounts, select your team, and click Manage Certificates. Click + and select Developer ID Application. Only the Account Holder of the team can create it.
+2. Save the notarization login in the keychain. Create an app-specific password at account.apple.com (Sign-In and Security > App-Specific Passwords), then run:
+
+   ```sh
+   xcrun notarytool store-credentials kidplanner-notary --apple-id <your Apple ID> --team-id <your team ID>
+   ```
+
+   The command asks for the app-specific password. Your team ID is on developer.apple.com > Account > Membership.
+
+Then build. electron-builder signs with the Developer ID certificate, uses the hardened runtime with `build/entitlements.mac.plist`, and sends the app to Apple for notarization:
+
+```sh
+APPLE_KEYCHAIN_PROFILE=kidplanner-notary npm run dist
+```
+
+### Windows
+
+GitHub Actions builds the Windows installer, because esbuild and workerd must be the Windows builds. On GitHub, open Actions > Build Setup (Windows) > Run workflow. When the run is done, download `kid-planner-setup-windows` under Summary > Artifacts. It holds the `.exe`.
+
+The workflow runs `npm test` first. The test fails if a Kindle script has Windows line endings (CRLF), because the Kindle cannot run such a script. `.gitattributes` keeps the `kindle/` files unchanged on Windows checkouts.
+
+The `.exe` is not signed. When a person opens it, Windows SmartScreen shows "Windows protected your PC". The person must click More info, then Run anyway. To remove this warning, sign the installer with a Windows code signing certificate (for example Azure Trusted Signing).
+

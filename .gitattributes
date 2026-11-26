@@ -1,0 +1,2 @@
+# The Kindle runs these files with sh and lua: a Windows checkout must not turn LF into CRLF.
+kindle/** -text

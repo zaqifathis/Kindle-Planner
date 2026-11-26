@@ -25,6 +25,7 @@
   .log { margin-top: 18px; } .log div { margin: 4px 0; } .log .now::after { content: " …"; }
   .err { color: var(--err); white-space: pre-wrap; margin-top: 14px; } .good { color: var(--ok); font-weight: 600; }
   .url { font-size: 18px; font-weight: 600; word-break: break-all; }
+  footer { padding: 0 34px 24px; color: var(--muted); font-size: 13px; }
 </style>
 </head>
 <body>
@@ -99,6 +100,7 @@
 </section>
 
 </main>
+<footer>Developed by Zaqi Fathis · <a data-href="https://github.com/zaqifathis">github.com/zaqifathis</a> · <a data-href="https://ko-fi.com/zaqifathis">Buy me a coffee ☕</a></footer>
 <script>
 const $ = (id) => document.getElementById(id);
 const call = (name, arg) => window.setup.call(name, arg);

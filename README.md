@@ -178,3 +178,7 @@ python3 tools/build_glyphs.py   # needs Pillow
 ## Licenses
 
 The fonts in `cloud/fonts/` (Noto Sans, Fredoka) use the SIL Open Font License 1.1. See `cloud/fonts/LICENSES.md`.
+
+## Author
+
+Developed by Zaqi Fathis ([github.com/zaqifathis](https://github.com/zaqifathis)). If Kid Planner helps your family, you can [buy me a coffee](https://ko-fi.com/zaqifathis).

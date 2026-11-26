@@ -341,7 +341,8 @@ footer{padding:30px 0 50px;color:var(--muted);font-size:14px}
   </div>
 </section>
 
-<footer><div class="wrap"><span data-i18n="footer">Kid Planner · Kindle display + web dashboard</span> <span id="who"></span></div></footer>
+<footer><div class="wrap"><span data-i18n="footer">Kid Planner · Kindle display + web dashboard</span> <span id="who"></span>
+  <p style="margin:8px 0 0"><span data-i18n="credit">Developed by Zaqi Fathis</span> · <a href="https://github.com/zaqifathis" target="_blank" rel="noopener noreferrer">github.com/zaqifathis</a> · <a href="https://ko-fi.com/zaqifathis" target="_blank" rel="noopener noreferrer" data-i18n="coffee">Buy me a coffee ☕</a></p></div></footer>
 <div class="tip" id="tip" role="tooltip"></div>
 
 <script>
@@ -402,6 +403,7 @@ const I18N = {
     "tg.saveNames": "Save names", "tg.bad_token": "Telegram does not know this token. Copy it again from BotFather.",
     "tg.no_group": "The bot is not in a group yet. Add it to your family group, send a message there, then click Connect again.",
     "tg.busy": "Telegram is busy. Wait one minute, then click Connect again.",
+    credit: "Developed by Zaqi Fathis", coffee: "Buy me a coffee ☕",
     password: "Password", logIn: "Log in", wrongPw: "Wrong password.", locked: (m) => `Too many wrong tries. Wait ${m} min, then try again.`,
     notSetUp: "This planner is not set up yet. Open the Kid Planner Setup app to choose a password.",
     noAccess: "This account has no access to the planner.", noAccess2: "and sign in with an allowed Google account.",
@@ -460,6 +462,7 @@ const I18N = {
     "tg.saveNames": "Namen speichern", "tg.bad_token": "Telegram kennt diesen Token nicht. Kopiere ihn noch einmal von BotFather.",
     "tg.no_group": "Der Bot ist noch in keiner Gruppe. Füge ihn zur Familiengruppe hinzu, schreibe dort eine Nachricht und klicke erneut auf Verbinden.",
     "tg.busy": "Telegram ist gerade beschäftigt. Warte eine Minute und klicke dann erneut auf Verbinden.",
+    credit: "Entwickelt von Zaqi Fathis", coffee: "Spendier mir einen Kaffee ☕",
     password: "Passwort", logIn: "Anmelden", wrongPw: "Falsches Passwort.", locked: (m) => `Zu viele falsche Versuche. Warte ${m} Min. und versuche es dann erneut.`,
     notSetUp: "Dieser Planer ist noch nicht eingerichtet. Öffne die Kid Planner Setup-App und wähle ein Passwort.",
     noAccess: "Dieses Konto hat keinen Zugriff auf den Planer.", noAccess2: "und melde dich mit einem erlaubten Google-Konto an.",
@@ -536,7 +539,8 @@ function showLogin(setup) {
     msg.textContent = r.status === 429 ? t("locked", Math.ceil((j.wait || 60) / 60)) : t("wrongPw");
     pw.select();
   });
-  const box = el("div", { class: "wrap" }, el("h1", { class: "name" }, "planner"));
+  // the "p" of the big title reaches below its line box, so the title gets room that grows with its size
+  const box = el("div", { class: "wrap" }, el("h1", { class: "name", style: "padding-bottom:.22em" }, "planner"));
   box.append(setup ? el("p", { class: "meta" }, t("notSetUp")) : form);
   document.body.replaceChildren(el("div", { class: "hero", style: "min-height:100vh" }, box));
   if (!setup) pw.focus();

@@ -1,0 +1,27 @@
+# Builds the Windows installer of the Setup app. Run it by hand: Actions > Build Setup (Windows) > Run workflow.
+# The .exe is attached to the run as an artifact (Summary > Artifacts).
+name: Build Setup (Windows)
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: setup
+    steps:
+      - run: git config --global core.autocrlf false # Kindle scripts keep LF (see .gitattributes)
+        working-directory: .
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci # installs the Windows builds of esbuild and workerd
+      - run: npm test # also checks that no Kindle file has CRLF
+      - run: npx electron-builder --win --x64 --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kid-planner-setup-windows
+          path: setup/dist/*.exe
+          if-no-files-found: error

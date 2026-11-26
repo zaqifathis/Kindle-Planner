@@ -20,9 +20,47 @@
   "build": {
     "appId": "app.kidplanner.setup",
     "asar": false,
-    "files": ["main.js", "preload.js", "ui.html", "steps.js", "node-shim.cjs", "payload/**", "node_modules/**"],
-    "mac": { "target": "dmg", "category": "public.app-category.utilities" },
-    "win": { "target": "nsis" },
-    "nsis": { "oneClick": true }
+    "files": [
+      "main.js",
+      "preload.js",
+      "ui.html",
+      "steps.js",
+      "node-shim.cjs",
+      "payload/**",
+      "node_modules/**",
+      "!node_modules/workerd/bin/workerd",
+      "!node_modules/esbuild/bin/esbuild",
+      "!node_modules/@img/**",
+      "!node_modules/cloudflare/src/**",
+      "!node_modules/cloudflare/**/*.mjs",
+      "!node_modules/**/*.map",
+      "!node_modules/**/*.d.ts",
+      "!node_modules/**/*.d.mts",
+      "!node_modules/**/*.d.cts"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.utilities",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": true
+    },
+    "electronLanguages": [
+      "en"
+    ]
   }
 }
