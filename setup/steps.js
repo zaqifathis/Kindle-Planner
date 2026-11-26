@@ -86,7 +86,7 @@ async function putAuth(run, accountId, work, record) {
 }
 
 /** Logs in like the dashboard does and saves the first settings. A new workers.dev address can take a minute to work. */
-async function configure(url, password, settings, fetchFn = fetch, waitMs = 120000) {
+async function configure(url, password, settings, fetchFn = fetch, waitMs = 300000) {
   const until = Date.now() + waitMs;
   for (;;) {
     const r = await fetchFn(url + "/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }) }).catch(() => null);

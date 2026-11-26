@@ -50,6 +50,7 @@ export const STR = {
     someDays: "Bestimmte Tage", when: "Wann?", whichDays: "An welchen Tagen? (mehrere möglich)",
     dailyFrom: "Jeden Tag, ab heute", time: "Uhrzeit", allDay: "Ganztägig", hour: "Stunde", minute: "Minute",
     whenInDay: "Wann am Tag?", cancel: "Abbrechen", save: "Speichern", space: "Leertaste",
+    starter: { morning: ["Aufstehen & waschen", "Frühstück", "Zähne putzen"], afternoon: ["Hausaufgaben"], night: ["Abendessen", "Zähne putzen", "Geschichte & schlafen"] },
     me: "Ich", wmo: WMO_DE, tgPhoto: "[Foto]", tgVoice: "[Sprachnachricht]",
     demoMsg: "Papa, wann kommst du heute nach Hause? Ich habe meine Hausaufgaben fertig!", demoEvent: "Schwimmen",
     kb: [
@@ -88,6 +89,7 @@ export const STR = {
     someDays: "Some days", when: "When?", whichDays: "Which days? (pick one or more)",
     dailyFrom: "Every day, from today", time: "Time", allDay: "All day", hour: "Hour", minute: "Minute",
     whenInDay: "When in the day?", cancel: "Cancel", save: "Save", space: "Space",
+    starter: { morning: ["Get up & wash", "Breakfast", "Brush teeth"], afternoon: ["Homework"], night: ["Dinner", "Brush teeth", "Story & sleep"] },
     me: "Me", wmo: WMO_EN, tgPhoto: "[Photo]", tgVoice: "[Voice message]",
     demoMsg: "Dad, when are you coming home today? I finished my homework!", demoEvent: "Swimming",
     kb: [

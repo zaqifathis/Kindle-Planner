@@ -82,6 +82,16 @@ assert.equal(JSON.parse(kv.get("data")).messages.at(-1).from, "Papa");
 assert.equal((await api("/api/telegram", { off: true })).status, 200);
 assert.equal(await (await call("/kindle/wait", { key: kindleKey })).text(), "off");
 
+// starter habits follow the Kindle language until the family changes or ticks something
+const morning = async () => (await (await call("/api/state", { cookie })).json()).habits.morning.map((h) => h.title);
+assert.equal((await morning())[0], "Aufstehen & waschen");
+await api("/api/settings", { kindle_lang: "en" });
+assert.equal((await morning())[0], "Get up & wash");
+const first = (await (await call("/api/state", { cookie })).json()).habits.morning[0];
+await api("/api/toggle", { key: first.id });
+await api("/api/settings", { kindle_lang: "de" });
+assert.equal((await morning())[0], "Get up & wash", "used habits stay");
+
 // logout clears the cookie; a reset (new record) ends old sessions
 assert.match((await call("/logout", { body: {} })).headers.get("Set-Cookie"), /Max-Age=0/);
 kv.set("auth", JSON.stringify((await newAuth("a new password")).record));

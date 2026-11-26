@@ -6,6 +6,7 @@ const fs = require("node:fs");
 const S = require("./steps");
 
 const PAYLOAD = path.join(__dirname, "payload"); // asar is off, so this path also works in the packaged app
+const SCOPES = ["account:read", "user:read", "workers:write", "workers_scripts:write", "workers_kv:write"]; // wrangler adds offline_access itself
 let WORK, CONF, run;
 const readConf = () => { try { return JSON.parse(fs.readFileSync(CONF, "utf8")); } catch { return {}; } };
 const writeConf = (c) => fs.writeFileSync(CONF, JSON.stringify(c, null, 2), { mode: 0o600 }); // holds the Kindle key
@@ -22,7 +23,8 @@ handle("login", async (_, say) => {
   let list = await S.accounts(run);
   if (!list) {
     say("browser");
-    const r = await run(["login"]);
+    // only what Setup needs: deploy a Worker, use KV, read the account (wrangler's default also asks for billing and more)
+    const r = await run(["login", "--scopes", ...SCOPES]);
     if (r.code !== 0) throw new Error("The Cloudflare login did not finish. Click Connect again.");
     list = await S.accounts(run);
   }
@@ -75,7 +77,9 @@ app.whenReady().then(() => {
   fs.mkdirSync(WORK, { recursive: true });
   // wrangler runs on Electron's own Node, so the user needs nothing else installed
   run = S.runner(process.execPath, path.join(__dirname, "node_modules/wrangler/bin/wrangler.js"), WORK,
-    { ELECTRON_RUN_AS_NODE: "1" }, ["--require", path.join(__dirname, "node-shim.cjs")]);
+    // own login folder: never uses or changes a wrangler login that already exists on this computer
+    { ELECTRON_RUN_AS_NODE: "1", XDG_CONFIG_HOME: path.join(app.getPath("userData"), "wrangler") },
+    ["--require", path.join(__dirname, "node-shim.cjs")]);
   const win = new BrowserWindow({
     width: 680, height: 760, title: "Kid Planner Setup", backgroundColor: "#ffffff",
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, sandbox: true, nodeIntegration: false },

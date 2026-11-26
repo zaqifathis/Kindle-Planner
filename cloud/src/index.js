@@ -16,16 +16,19 @@ const KEY = "data";
 const newId = () => crypto.randomUUID().replace(/-/g, "").slice(0, 8);
 const cleanDays = (d) => [...new Set((Array.isArray(d) ? d : ALL_DAYS).map(Number).filter((x) => x >= 0 && x <= 6))].sort();
 
+function defaultHabits(lang) {
+  const d = STR[lang].starter, h = (titles, days = ALL_DAYS) => titles.map((title) => ({ id: newId(), title, days: [...days], alias: [] }));
+  return { morning: h(d.morning), afternoon: h(d.afternoon, [0, 1, 2, 3, 4]), night: h(d.night) };
+}
+/** True while the habits are still the starter list of `lang` and nothing is ticked: a language change may replace them. */
+function untouchedStarter(data, lang) {
+  const titles = (o) => JSON.stringify(PERIODS.map(([p]) => (o[p] || []).map((x) => (typeof x === "string" ? x : x.title))));
+  return !Object.keys(data.done).length && titles(data.habits) === titles(STR[lang].starter);
+}
 function defaultData() {
-  const h = (titles, days = ALL_DAYS) => titles.map((title) => ({ id: newId(), title, days: [...days], alias: [] }));
   return {
     version: 4, child_name: "", lock_name: "", kindle_lang: "de", events: [], done: {}, kindle_command: "run", loc: null,
-    messages: [], msg_seen: 0, tg_offset: 0,
-    habits: {
-      morning: h(["Aufstehen & waschen", "Frühstück", "Zähne putzen"]),
-      afternoon: h(["Hausaufgaben"], [0, 1, 2, 3, 4]),
-      night: h(["Abendessen", "Zähne putzen", "Geschichte & schlafen"]),
-    },
+    messages: [], msg_seen: 0, tg_offset: 0, habits: defaultHabits("de"),
   };
 }
 
@@ -788,7 +791,10 @@ export default {
       } else if (path === "/api/settings") {
         if (b.child_name !== undefined) data.child_name = String(b.child_name).slice(0, 30);
         if (b.lock_name !== undefined) data.lock_name = String(b.lock_name).slice(0, 40);
-        if (LANGS.includes(b.kindle_lang)) data.kindle_lang = b.kindle_lang;
+        if (LANGS.includes(b.kindle_lang)) {
+          if (b.kindle_lang !== data.kindle_lang && untouchedStarter(data, data.kindle_lang || "de")) data.habits = defaultHabits(b.kindle_lang);
+          data.kindle_lang = b.kindle_lang;
+        }
       } else if (path === "/api/kindle") {
         if (!["run", "stop"].includes(b.command)) return json({ error: "bad command" }, 400);
         data.kindle_command = b.command;
