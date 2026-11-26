@@ -1,0 +1,28 @@
+{
+  "name": "kid-planner-setup",
+  "productName": "Kid Planner Setup",
+  "version": "1.0.0",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "prepare-payload": "node prepare.mjs",
+    "start": "node prepare.mjs && electron .",
+    "test": "node prepare.mjs && node test_setup.mjs",
+    "dist": "node prepare.mjs && electron-builder"
+  },
+  "dependencies": {
+    "wrangler": "4.168.0"
+  },
+  "devDependencies": {
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "app.kidplanner.setup",
+    "asar": false,
+    "files": ["main.js", "preload.js", "ui.html", "steps.js", "node-shim.cjs", "payload/**", "node_modules/**"],
+    "mac": { "target": "dmg", "category": "public.app-category.utilities" },
+    "win": { "target": "nsis" },
+    "nsis": { "oneClick": true }
+  }
+}

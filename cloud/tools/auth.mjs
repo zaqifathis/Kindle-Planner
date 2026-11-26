@@ -16,10 +16,10 @@ export async function passwordHash(password, salt = rand(16), iter = ITER) {
   return { salt, iter, hash: hex(bits) };
 }
 
-/** New record: new password, new Kindle key, new session secret (logs out every browser). */
-export async function newAuth(password) {
+/** New record: new password, new session secret (logs out every browser), and a new Kindle key
+ *  unless the current one is passed in (a password reset then needs no Kindle reinstall). */
+export async function newAuth(password, kindleKey = rand(24)) {
   if (String(password).length < MIN_PASSWORD) throw new Error(`The password needs at least ${MIN_PASSWORD} characters.`);
-  const kindleKey = rand(24);
   const kindle = hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(kindleKey)));
   return { record: { v: 1, ...(await passwordHash(password)), kindle, session: rand(32) }, kindleKey };
 }

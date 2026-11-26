@@ -107,7 +107,12 @@ The Worker uses Cloudflare Access. Access signs every request that it lets throu
 - A browser user must have an email in `ALLOWED_EMAILS`.
 - The Kindle uses an Access service token. Its client ID must equal `KINDLE_CLIENT_ID`. This token works only on the three Kindle routes, not on the parent API.
 
-If the Access configuration is missing, the Worker falls back to a legacy shared key. If that key is also missing, the Worker refuses all requests. All responses carry security headers (CSP, `frame-ancestors 'none'`, `no-referrer`, `nosniff`).
+If the Access configuration is missing, the Worker uses password mode. This is the mode the Setup app installs:
+
+- The KV key `auth` holds a PBKDF2 hash of the parent password, a SHA-256 hash of the Kindle key, and a session secret. `cloud/tools/auth.mjs` makes this record. The Worker has no page that creates a password, so a stranger cannot claim a new install.
+- `POST /login` checks the password and sets a signed cookie for 90 days. After 5 wrong tries, login locks for 1 minute, then 2, 4, and so on, up to 60 minutes.
+- The Kindle sends its key in the `X-Kindle-Key` header (`KINDLE_KEY` in `dash.conf`). The key works only on the Kindle routes.
+- If the `auth` key is missing, the Worker refuses all requests. All responses carry security headers (CSP, `frame-ancestors 'none'`, `no-referrer`, `nosniff`).
 
 ### Legacy local server (`server/`)
 
@@ -128,6 +133,10 @@ Warning: A jailbreak deletes the data on the Kindle and can brick the device. Ba
 
 ## Setup
 
+To install for someone who does not code, give them the Setup app (`setup/`, see `setup/README.md`). The steps below are the manual setup with Cloudflare Access.
+
+Telegram is set up in the web dashboard, in the Kindle tab. The old secrets `TG_TOKEN`, `TG_CHAT`, and `TG_NAMES` still work when no Telegram configuration is saved there.
+
 ### 1. Deploy the Worker
 
 ```sh
@@ -138,9 +147,6 @@ npx wrangler secret put ACCESS_TEAM_DOMAIN   # e.g. yourteam.cloudflareaccess.co
 npx wrangler secret put ACCESS_AUD           # Access application audience tag
 npx wrangler secret put ALLOWED_EMAILS       # comma-separated parent emails
 npx wrangler secret put KINDLE_CLIENT_ID     # client ID of the Kindle service token
-npx wrangler secret put TG_TOKEN             # Telegram bot token from @BotFather (optional)
-npx wrangler secret put TG_CHAT              # Telegram family group chat ID (optional)
-npx wrangler secret put TG_NAMES             # optional JSON, Telegram first name -> name on the Kindle, e.g. {"Alex":"Papa"}
 npm run deploy
 ```
 

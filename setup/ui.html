@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
+<title>Kid Planner Setup</title>
+<style>
+  :root { --ink: #111; --muted: #5b5b5b; --pink: #ffd6e7; --ok: #0a7a35; --err: #b00020; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 16px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif; color: var(--ink); }
+  header { background: var(--pink); padding: 26px 34px 22px; border-bottom: 1.5px solid var(--ink); }
+  header h1 { margin: 0; font-size: 34px; letter-spacing: -.02em; }
+  header p { margin: 4px 0 0; color: var(--muted); }
+  main { padding: 26px 34px 34px; }
+  h2 { font-size: 22px; margin: 0 0 12px; }
+  ol, ul { padding-left: 22px; } li { margin: 6px 0; }
+  label { display: block; font-weight: 600; margin: 16px 0 6px; }
+  input, select { font: inherit; padding: 9px 12px; border: 1.5px solid var(--ink); border-radius: 10px; width: 100%; max-width: 420px; }
+  .hint { color: var(--muted); font-size: 14px; margin: 4px 0 0; }
+  button { font: inherit; font-weight: 600; border: 1.5px solid var(--ink); border-radius: 999px; padding: 10px 22px; background: #fff; cursor: pointer; margin: 18px 8px 0 0; }
+  button.primary { background: var(--ink); color: #fff; }
+  button:disabled { opacity: .45; cursor: default; }
+  a { color: inherit; cursor: pointer; text-decoration: underline; }
+  .step { display: none; } .step.on { display: block; }
+  .log { margin-top: 18px; } .log div { margin: 4px 0; } .log .now::after { content: " …"; }
+  .err { color: var(--err); white-space: pre-wrap; margin-top: 14px; } .good { color: var(--ok); font-weight: 600; }
+  .url { font-size: 18px; font-weight: 600; word-break: break-all; }
+</style>
+</head>
+<body>
+<header><h1>Kid Planner Setup</h1><p>Installs the planner for your Kindle. It takes about 5 minutes.</p></header>
+<main>
+
+<section class="step" id="s-welcome">
+  <h2>Before you start</h2>
+  <ol>
+    <li>Your Kindle is jailbroken and has KUAL. This step is not automatic, because it depends on your Kindle. Follow the guide at <a data-href="https://kindlemodding.org">kindlemodding.org</a>.</li>
+    <li>You have a free Cloudflare account. The planner runs there. If you do not have one, <a data-href="https://dash.cloudflare.com/sign-up">sign up here</a> and confirm your email.</li>
+  </ol>
+  <button class="primary" id="b-login">Connect Cloudflare</button>
+  <div class="log" id="login-log"></div><div class="err" id="login-err"></div>
+</section>
+
+<section class="step" id="s-details">
+  <h2>Your planner</h2>
+  <div id="acct-box" hidden><label for="acct">Cloudflare account</label><select id="acct"></select></div>
+  <label for="child">Child's name</label><input id="child" maxlength="30" autocomplete="off">
+  <p class="hint">Shown on the Kindle lock screen and in the dashboard.</p>
+  <label for="lang">Language on the Kindle</label>
+  <select id="lang"><option value="en">English</option><option value="de">Deutsch</option></select>
+  <label for="pw1">Password for the parent dashboard</label><input id="pw1" type="password" autocomplete="new-password">
+  <p class="hint">At least 10 characters. Write it down: you need it to open the dashboard.</p>
+  <label for="pw2">Type the password again</label><input id="pw2" type="password" autocomplete="new-password">
+  <br><button class="primary" id="b-install">Install</button>
+  <div class="log" id="install-log"></div><div class="err" id="install-err"></div>
+</section>
+
+<section class="step" id="s-kindle">
+  <h2>Copy the planner to the Kindle</h2>
+  <p id="k-wait">Connect the Kindle to this computer with its USB cable. Setup finds it by itself.</p>
+  <p id="k-found" hidden></p>
+  <button class="primary" id="b-kindle" disabled>Copy to Kindle</button>
+  <button id="b-skip">Skip for now</button>
+  <div class="log" id="kindle-log"></div><div class="err" id="kindle-err"></div>
+</section>
+
+<section class="step" id="s-done">
+  <h2 class="good">The planner is installed</h2>
+  <div id="kindle-next" hidden>
+    <p>On the Kindle:</p>
+    <ol>
+      <li>Eject the Kindle on this computer, then unplug the cable.</li>
+      <li>Open KUAL on the Kindle.</li>
+      <li>Tap Kid Dashboard, then Start dashboard. From now on it also starts by itself when the Kindle turns on.</li>
+    </ol>
+  </div>
+  <p>Your dashboard. Save this address, it works on your phone too:</p>
+  <p class="url" id="url"></p>
+  <button class="primary" id="b-open">Open dashboard</button>
+  <button id="b-home">Back</button>
+</section>
+
+<section class="step" id="s-home">
+  <h2>The planner is already installed</h2>
+  <p class="url" id="home-url"></p>
+  <button class="primary" id="b-open2">Open dashboard</button>
+  <button id="b-tokindle">Install on a Kindle</button>
+  <button id="b-pw">Change password</button>
+  <button id="b-again">Install or update again</button>
+</section>
+
+<section class="step" id="s-pw">
+  <h2>Change the dashboard password</h2>
+  <label for="np1">New password</label><input id="np1" type="password" autocomplete="new-password">
+  <p class="hint">At least 10 characters. Every browser has to log in again. The Kindle keeps working.</p>
+  <label for="np2">Type it again</label><input id="np2" type="password" autocomplete="new-password">
+  <br><button class="primary" id="b-pwsave">Save password</button><button id="b-pwback">Back</button>
+  <div class="log" id="pw-log"></div><div class="err" id="pw-err"></div>
+</section>
+
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const call = (name, arg) => window.setup.call(name, arg);
+const STEPS = {
+  browser: "A browser window opened. Log in to Cloudflare there and click Allow",
+  copy: "Preparing the planner", address: "Creating your web address",
+  deploy: "Installing the planner on Cloudflare (about 1 minute)", password: "Saving your password",
+  settings: "Waiting for the new address to work and saving your settings (up to 2 minutes)",
+};
+let state = {}, logBox = null;
+window.setup.onProgress((m) => {
+  if (!logBox) return;
+  for (const d of logBox.querySelectorAll(".now")) { d.className = ""; d.textContent = "✓ " + d.textContent; }
+  logBox.append(Object.assign(document.createElement("div"), { className: "now", textContent: STEPS[m] || m }));
+});
+function show(id) { for (const s of document.querySelectorAll(".step")) s.classList.toggle("on", s.id === id); }
+async function busy(button, log, err, fn) {
+  button.disabled = true; logBox = $(log); logBox.replaceChildren(); $(err).textContent = "";
+  const r = await fn();
+  button.disabled = false;
+  if (r.error) { $(err).textContent = r.error; for (const d of logBox.querySelectorAll(".now")) d.className = ""; }
+  return r.error ? null : r;
+}
+function samePw(a, b, err) {
+  if ($(a).value !== $(b).value) { $(err).textContent = "The two passwords are not the same."; return false; }
+  return true;
+}
+document.addEventListener("click", (e) => { const h = e.target.dataset && e.target.dataset.href; if (h) { e.preventDefault(); call("open", { url: h }); } });
+
+$("b-login").onclick = async () => {
+  const r = await busy($("b-login"), "login-log", "login-err", () => call("login"));
+  if (!r) return;
+  $("acct").replaceChildren(...r.accounts.map((a) => Object.assign(document.createElement("option"), { value: a.id, textContent: a.name })));
+  $("acct-box").hidden = r.accounts.length < 2;
+  show("s-details"); $("child").focus();
+};
+$("b-install").onclick = async () => {
+  $("install-err").textContent = "";
+  if (!samePw("pw1", "pw2", "install-err")) return;
+  const r = await busy($("b-install"), "install-log", "install-err", () => call("install", {
+    accountId: $("acct").value, password: $("pw1").value, childName: $("child").value.trim(), lang: $("lang").value,
+  }));
+  if (!r) return;
+  state.url = r.url; $("pw1").value = $("pw2").value = "";
+  toKindle();
+};
+
+let poll = null, drive = null;
+function toKindle() {
+  show("s-kindle"); drive = null; $("b-kindle").disabled = true; $("kindle-err").textContent = "";
+  const look = async () => {
+    const r = await call("find-kindles");
+    const k = (r.kindles || [])[0];
+    $("k-wait").hidden = !!k; $("k-found").hidden = !k;
+    if (!k) { drive = null; $("b-kindle").disabled = true; return; }
+    drive = k.path;
+    $("k-found").textContent = k.kual ? `Found the Kindle at ${k.path}.` : `Found a Kindle at ${k.path}, but it has no KUAL yet. Jailbreak it and install KUAL first, then connect it again.`;
+    $("b-kindle").disabled = !k.kual;
+  };
+  look(); clearInterval(poll); poll = setInterval(look, 2000);
+}
+$("b-kindle").onclick = async () => {
+  const r = await busy($("b-kindle"), "kindle-log", "kindle-err", () => call("install-kindle", { drive }));
+  if (!r) return;
+  clearInterval(poll); done(true);
+};
+$("b-skip").onclick = () => { clearInterval(poll); done(false); };
+function done(kindle) { $("kindle-next").hidden = !kindle; $("url").textContent = state.url; show("s-done"); }
+$("b-open").onclick = $("b-open2").onclick = () => call("open", { url: state.url });
+$("b-home").onclick = () => home();
+$("b-tokindle").onclick = toKindle;
+$("b-again").onclick = () => show("s-welcome");
+$("b-pw").onclick = () => { show("s-pw"); $("np1").focus(); };
+$("b-pwback").onclick = () => home();
+$("b-pwsave").onclick = async () => {
+  $("pw-err").textContent = "";
+  if (!samePw("np1", "np2", "pw-err")) return;
+  const r = await busy($("b-pwsave"), "pw-log", "pw-err", () => call("reset-password", { password: $("np1").value }));
+  if (!r) return;
+  $("np1").value = $("np2").value = "";
+  $("pw-log").replaceChildren(Object.assign(document.createElement("div"), { className: "good", textContent: "The new password is saved." }));
+};
+async function home() {
+  state = await call("state");
+  if (state.url) { $("home-url").textContent = state.url; show("s-home"); } else show("s-welcome");
+}
+home();
+</script>
+</body>
+</html>
