@@ -1,7 +1,8 @@
 // The install steps, without Electron, so test_setup.mjs can run them.
 const fs = require("node:fs");
 const path = require("node:path");
-const { spawn } = require("node:child_process");
+const crypto = require("node:crypto");
+const { spawn, execFileSync } = require("node:child_process");
 const { pathToFileURL } = require("node:url");
 
 /** Runs wrangler with the given node binary. Returns {code, out}; stdin is closed, so wrangler never waits for a question. */
@@ -122,4 +123,90 @@ function installKindle(payloadKindle, drive, url, kindleKey) {
   return dest;
 }
 
-module.exports = { runner, prepareWork, accounts, workerExists, ensureSubdomain, deploy, newAuth, putAuth, configure, findKindles, installKindle };
+// Jailbreak files, pinned: a download with another SHA-256 is never copied to the Kindle.
+// shortcut: fixed versions, update url and sha256 here when WinterBreak or PEKI release a fix.
+const JB = {
+  winterbreak: { url: "https://github.com/KindleModding/WinterBreak/releases/download/v2.1.0/WinterBreak.tar.gz", sha256: "dc04fff5fcb685834cba9f9e95d4818b473d4100b2d40b8bb7c598ad09eb850d" },
+  kual: { url: "https://github.com/KindleTweaks/PEKI/releases/download/v1.0/PEKI.zip", sha256: "f653045909ed230496c3d8176c9901d3a6a1f693c52b488569be6a60e0852499" },
+};
+const MB = 1024 * 1024;
+const FILLER = "kidplanner-filler";
+
+/** Downloads a pinned archive, checks its hash and extracts it. Calls fn(folder), then deletes the temp files. */
+async function withArchive({ url, sha256 }, tmpRoot, fn, fetchFn = fetch) {
+  const name = path.basename(url);
+  const r = await fetchFn(url).catch(() => null);
+  if (!r || !r.ok) throw new Error(`Could not download ${name}. Check the internet connection, then try again.`);
+  const buf = Buffer.from(await r.arrayBuffer());
+  if (crypto.createHash("sha256").update(buf).digest("hex") !== sha256) throw new Error(`The download of ${name} is not the expected file. Setup copied nothing. Try again later.`);
+  const dir = fs.mkdtempSync(path.join(tmpRoot, "kp-jb-"));
+  try {
+    fs.writeFileSync(path.join(dir, name), buf);
+    fs.mkdirSync(path.join(dir, "x"));
+    // bsdtar opens .tar.gz and .zip. On Windows use the system tar.exe, not a GNU tar from Git (no .zip).
+    // shortcut: Linux GNU tar cannot open .zip, add unzip when a Linux build exists.
+    const tar = process.platform === "win32" ? path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe") : "tar";
+    execFileSync(tar, ["-xf", path.join(dir, name), "-C", path.join(dir, "x")]);
+    return await fn(path.join(dir, "x"));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const freeBytes = (d) => { const s = fs.statfsSync(d); return s.bavail * s.bsize; };
+
+/** Fills the Kindle storage until `leave` bytes are free, so the Kindle cannot download an Amazon update during the jailbreak. */
+async function fillStorage(drive, leave = 70 * MB, free = freeBytes) {
+  const dir = path.join(drive, FILLER);
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir);
+  let left = free(drive) - leave; // measured once: a FAT drive can report free space late while it writes
+  const chunk = Buffer.alloc(8 * MB);
+  try {
+    for (let i = 1; left > 0; i++) {
+      const fh = await fs.promises.open(path.join(dir, `fill-${i}.dat`), "w");
+      try {
+        for (let n = 0; n < 1024 * MB && left > 0; n += chunk.length) { // 1 GB per file, FAT32 allows at most 4 GB
+          const len = Math.min(chunk.length, left);
+          await fh.write(chunk, 0, len);
+          left -= len;
+        }
+        await fh.sync();
+      } finally { await fh.close(); }
+    }
+  } catch (e) {
+    fs.rmSync(dir, { recursive: true, force: true });
+    throw new Error("Could not fill the Kindle storage: " + e.message);
+  }
+}
+
+/** Copies the Kindle's documents folder (books, notes, clippings) to a new dated folder. Returns that folder. */
+function backupBooks(drive, backupRoot, now = new Date()) {
+  const stamp = now.toISOString().slice(0, 16).replace("T", " ").replace(":", "-"); // no ":" in Windows names
+  const dest = path.join(backupRoot, `Kindle backup ${stamp}`);
+  fs.cpSync(path.join(drive, "documents"), path.join(dest, "documents"), { recursive: true, errorOnExist: true, force: false });
+  return dest;
+}
+
+/** Jailbreak part 1: backs up the books, copies WinterBreak (with its hidden .active_content_sandbox folder) and fills the storage. */
+async function prepareJailbreak(drive, tmpRoot, backupRoot, say = () => {}, fetchFn = fetch) {
+  say("jb-backup"); const backup = backupBooks(drive, backupRoot); // before any change on the Kindle; a full disk stops here
+  say("jb-download");
+  await withArchive(JB.winterbreak, tmpRoot, (dir) => { say("jb-copy"); fs.cpSync(dir, drive, { recursive: true, force: true }); }, fetchFn);
+  say("jb-fill"); await fillStorage(drive);
+  return backup;
+}
+
+/** Jailbreak part 2, after WinterBreak ran: removes the filler and update files, installs KUAL and makes the extensions folder. */
+async function installKual(drive, tmpRoot, say = () => {}, fetchFn = fetch) {
+  say("kual-download");
+  await withArchive(JB.kual, tmpRoot, (dir) => {
+    say("kual-copy");
+    fs.rmSync(path.join(drive, FILLER), { recursive: true, force: true });
+    for (const n of fs.readdirSync(drive)) if (/\.bin(\.tmp\.partial)?$/i.test(n)) fs.rmSync(path.join(drive, n), { force: true });
+    for (const f of ["KUAL.sh", "KUAL.jar"]) fs.copyFileSync(path.join(dir, f), path.join(drive, "documents", f));
+    fs.mkdirSync(path.join(drive, "extensions"), { recursive: true });
+  }, fetchFn);
+}
+
+module.exports = { runner, prepareWork, accounts, workerExists, ensureSubdomain, deploy, newAuth, putAuth, configure, findKindles, installKindle, withArchive, fillStorage, backupBooks, prepareJailbreak, installKual, FILLER, JB };

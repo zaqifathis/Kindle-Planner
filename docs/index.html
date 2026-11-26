@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kid Planner for Kindle</title>
+<meta name="description" content="Turn an old Kindle into a daily planner for your child. Download the Setup app for Mac or Windows.">
+<style>
+  :root { --ink: #111; --muted: #5b5b5b; --pink: #ffd6e7; --err: #b00020; --paper: #fff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 17px/1.6 -apple-system, "Segoe UI", system-ui, sans-serif; color: var(--ink); background: var(--paper); }
+  header { background: var(--pink); border-bottom: 1.5px solid var(--ink); }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 24px; }
+  header .wrap { padding-top: 40px; }
+  h1 { margin: 0; font-size: clamp(32px, 6vw, 46px); letter-spacing: -.02em; line-height: 1.1; }
+  header p { margin: 8px 0 0; color: #333; max-width: 34em; }
+  nav { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 28px; }
+  nav a { font-weight: 600; text-decoration: none; color: var(--ink); padding: 9px 18px; border: 1.5px solid var(--ink); border-bottom: 0; border-radius: 12px 12px 0 0; background: rgba(255,255,255,.55); }
+  nav a[aria-current="page"] { background: var(--paper); position: relative; top: 1.5px; }
+  nav a:focus-visible, .btn:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+  main.wrap { padding-top: 34px; padding-bottom: 56px; }
+  h2 { font-size: 26px; margin: 0 0 12px; letter-spacing: -.01em; }
+  h3 { font-size: 19px; margin: 32px 0 8px; }
+  ol, ul { padding-left: 24px; } li { margin: 6px 0; }
+  code { font: 15px ui-monospace, SFMono-Regular, Menlo, monospace; background: #f3f3f3; padding: 1px 5px; border-radius: 4px; }
+  a { color: inherit; }
+  .downloads { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin: 24px 0 8px; }
+  .btn { display: block; text-decoration: none; border: 1.5px solid var(--ink); border-radius: 16px; padding: 18px 22px; background: var(--ink); color: #fff; }
+  .btn strong { display: block; font-size: 20px; }
+  .btn span { font-size: 14px; opacity: .8; }
+  .btn.alt { background: var(--paper); color: var(--ink); }
+  .note { color: var(--muted); font-size: 15px; }
+  .warn { border-left: 4px solid var(--err); padding: 4px 0 4px 14px; margin: 16px 0; }
+  .warn strong { color: var(--err); }
+  .steps-big { counter-reset: s; list-style: none; padding: 0; }
+  .steps-big > li { counter-increment: s; position: relative; padding-left: 48px; margin: 18px 0; }
+  .steps-big > li::before { content: counter(s); position: absolute; left: 0; top: -2px; width: 32px; height: 32px; border: 1.5px solid var(--ink); border-radius: 50%; display: grid; place-items: center; font-weight: 700; background: var(--pink); }
+  footer { border-top: 1.5px solid var(--ink); padding: 20px 0 32px; color: var(--muted); font-size: 14px; }
+  .js section[data-tab] { display: none; } .js section[data-tab].on { display: block; }
+</style>
+</head>
+<body>
+<script>document.body.className = "js";</script>
+<header>
+  <div class="wrap">
+    <h1>Kid Planner for Kindle</h1>
+    <p>Turn an old Kindle into a daily planner for your child. You plan the day on your phone, and the Kindle shows it.</p>
+    <nav aria-label="Pages">
+      <a href="#download">Download</a>
+      <a href="#prepare">Prepare your Kindle</a>
+      <a href="#backup">Backup and screen password</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<section data-tab id="download">
+  <h2>Download the Setup app</h2>
+  <p>The Setup app installs Kid Planner for you. It also helps you prepare the Kindle. It takes about 5 minutes, plus about 30 minutes for the Kindle the first time.</p>
+  <div class="downloads">
+    <a class="btn" href="https://github.com/zaqifathis/kindle-dashboard/releases/latest/download/KidPlannerSetup-mac.dmg">
+      <strong>Download for Mac</strong><span>.dmg · Apple silicon (M1 and newer)</span></a>
+    <a class="btn alt" href="https://github.com/zaqifathis/kindle-dashboard/releases/latest/download/KidPlannerSetup-windows.exe">
+      <strong>Download for Windows</strong><span>.exe · Windows 10 and 11</span></a>
+  </div>
+  <p class="note">Windows: the installer is not signed yet. If Windows shows "Windows protected your PC", click More info, then Run anyway.</p>
+
+  <h3>What you need</h3>
+  <ul>
+    <li>A touch Kindle and its USB cable. Kid Planner is tested on a Kindle Paperwhite 3 (7th generation, 2015). Other touch Kindles can work, but nobody tested them yet.</li>
+    <li>A free Cloudflare account. The planner runs there. <a href="https://dash.cloudflare.com/sign-up">Sign up here</a>.</li>
+    <li>A Wi-Fi network for the Kindle.</li>
+  </ul>
+
+  <h3>How it works</h3>
+  <ol class="steps-big">
+    <li>Open the Setup app. If the Kindle is not ready yet, click Prepare my Kindle. See <a href="#prepare">Prepare your Kindle</a>.</li>
+    <li>Click Connect Cloudflare and log in.</li>
+    <li>Type your child's name and a password for the parent dashboard, then click Install.</li>
+    <li>Connect the Kindle with the cable and click Copy to Kindle.</li>
+    <li>On the Kindle, open KUAL, then tap Kid Dashboard and Start dashboard.</li>
+  </ol>
+</section>
+
+<section data-tab id="prepare">
+  <h2>Prepare your Kindle</h2>
+  <p>You do this once. The Kindle needs a jailbreak and KUAL. A jailbreak lets the Kindle run programs that Amazon did not make. KUAL is a menu on the Kindle that starts these programs. Kid Planner appears in this menu.</p>
+  <div class="warn"><strong>Warning:</strong> A jailbreak can fail, and a failed jailbreak can make the Kindle unusable. Do not do a factory reset during or after the jailbreak unless an experienced person tells you to.</div>
+  <p>This guide follows <a href="https://kindlemodding.org">kindlemodding.org</a>, the website of the Kindle modding community. Amazon changes the Kindle software often. If a step here is different from kindlemodding.org, do what kindlemodding.org says.</p>
+
+  <h3>Step 1: Find the firmware version</h3>
+  <p>The firmware is the Kindle's own software. The right jailbreak depends on its version.</p>
+  <ol>
+    <li>On the Kindle, tap the three dots (Menu) at the top right.</li>
+    <li>Tap Settings, then Device Options, then Device Info.</li>
+    <li>Write down the firmware version, for example <code>5.16.21</code>, and the first 8 characters of the serial number.</li>
+  </ol>
+
+  <h3>Step 2: Find the right jailbreak</h3>
+  <ol>
+    <li>Open the <a href="https://kindlemodding.org/jailbreak-wizard.html">jailbreak wizard</a> on your computer.</li>
+    <li>Enter the serial number, the firmware version, and the other answers that the wizard asks for.</li>
+  </ol>
+  <p>If the wizard says that no jailbreak exists for your firmware, stop here. You must wait until the community releases a new jailbreak.</p>
+  <p>Most Paperwhite 3 Kindles get WinterBreak. WinterBreak does not work on firmware 5.18.1 or newer. If the wizard names WinterBreak, do Step 3A. If it names another jailbreak, do Step 3B.</p>
+
+  <h3>Step 3A: WinterBreak with the Setup app</h3>
+  <ol>
+    <li>Do the steps in <a href="#backup">Backup and screen password</a>. The app also copies your books to the Documents folder on your computer.</li>
+    <li>Make sure that the Kindle is registered to an Amazon account. WinterBreak runs from the Kindle Store.</li>
+    <li>On the Kindle, turn on Airplane Mode, then restart the Kindle.</li>
+    <li>Connect the Kindle to the computer. In the Setup app, click Prepare my Kindle, then Copy the jailbreak. The app backs up the books, copies WinterBreak, and fills the Kindle storage so that the Kindle cannot download an Amazon update. This can take about 10 minutes.</li>
+    <li>Eject the Kindle on the computer, then unplug the cable.</li>
+    <li>On the Kindle home screen, tap the cart icon to open the Kindle Store. If the Kindle asks to turn off Airplane Mode, tap Yes.</li>
+    <li>A page called Mesquito opens. Tap the WinterBreak icon.</li>
+    <li>Wait about 30 seconds. Lines of text fill the screen, and the home screen restarts. This means the jailbreak worked. If no text appears, do steps 6 and 7 again.</li>
+    <li>Connect the Kindle to the computer again, then click Install KUAL in the app. The app removes the filler files and the update files, and copies KUAL.</li>
+  </ol>
+  <p>WinterBreak blocks automatic Amazon updates, and it installs the hotfix. The hotfix keeps the jailbreak after an Amazon update.</p>
+
+  <h3>Step 3B: Another jailbreak</h3>
+  <ol>
+    <li>Do the steps in <a href="#backup">Backup and screen password</a>.</li>
+    <li>Follow the instructions for your jailbreak on <a href="https://kindlemodding.org/jailbreaking/">kindlemodding.org</a>.</li>
+    <li>Connect the Kindle to the computer. In the Setup app, click Prepare my Kindle, then Install KUAL. Do not click Copy the jailbreak: it copies WinterBreak.</li>
+  </ol>
+  <p>If you fill the storage by hand, delete the filler files before you click Install KUAL.</p>
+
+  <h3>Step 4: Check KUAL</h3>
+  <p>Eject the Kindle and open the Kindle library. A book called KUAL appears. Tap it to check that the KUAL menu opens. Then continue in the Setup app.</p>
+
+  <h3>Keep the Kindle working</h3>
+  <ul>
+    <li>Keep automatic updates blocked. An Amazon update can remove the jailbreak.</li>
+    <li>If an update installed anyway and KUAL is gone, check kindlemodding.org. Run the hotfix again, or wait for a new jailbreak, as the site tells you.</li>
+    <li>To use the Kindle as a normal e-reader again, open the web dashboard. In the Kindle tab, click "Return to normal Kindle".</li>
+  </ul>
+</section>
+
+<section data-tab id="backup">
+  <h2>Backup and screen password</h2>
+  <p>Do these steps before the jailbreak.</p>
+
+  <h3>Back up your books</h3>
+  <p>When you click Copy the jailbreak, the Setup app does this for you. It copies the <code>documents</code> folder of the Kindle to a new folder called <code>Kindle backup</code> with the date, in the Documents folder on your computer. The <code>documents</code> folder holds your books, notes and highlights.</p>
+  <p>To back up by hand:</p>
+  <ol>
+    <li>Connect the Kindle to the computer with the USB cable.</li>
+    <li>Open the Kindle drive. On a Mac it is on the desktop or in Finder. On Windows it is in File Explorer under This PC.</li>
+    <li>Copy the folder <code>documents</code> to your computer.</li>
+    <li>Eject the Kindle.</li>
+  </ol>
+  <p class="note">Books that you bought from Amazon are also in your Amazon account, and you can download them again. The backup matters most for books and documents that you added yourself.</p>
+
+  <h3>Remove the screen password</h3>
+  <p>A screen password can block the jailbreak. You can turn it on again after the setup.</p>
+  <ol>
+    <li>On the Kindle, tap the three dots (Menu) at the top right.</li>
+    <li>Tap Settings, then Device Options, then Device Passcode.</li>
+    <li>Type the current passcode, then turn the passcode off.</li>
+  </ol>
+
+  <h3>Turn off parental controls for the store</h3>
+  <p>WinterBreak runs from the Kindle Store. If parental controls block the store, the jailbreak cannot start.</p>
+  <ol>
+    <li>Tap Settings, then Parental Controls, then Restrictions.</li>
+    <li>Type the parental controls password, then allow the Kindle Store.</li>
+  </ol>
+  <p class="note">The menu names can be a little different on your Kindle model.</p>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">Developed by Zaqi Fathis · <a href="https://github.com/zaqifathis">github.com/zaqifathis</a> · <a href="https://ko-fi.com/zaqifathis">Buy me a coffee</a> · Kindle is a trademark of Amazon. This project is not made by Amazon.</div>
+</footer>
+
+<script>
+const tabs = [...document.querySelectorAll("section[data-tab]")];
+function showTab() {
+  const id = tabs.some((t) => "#" + t.id === location.hash) ? location.hash.slice(1) : "download";
+  for (const t of tabs) t.classList.toggle("on", t.id === id);
+  for (const a of document.querySelectorAll("nav a")) {
+    if (a.hash === "#" + id) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+  }
+}
+addEventListener("hashchange", () => { showTab(); scrollTo(0, 0); });
+showTab();
+</script>
+</body>
+</html>

@@ -66,6 +66,11 @@ handle("install-kindle", async ({ drive }) => {
   return {};
 });
 
+// the drive must be a Kindle that Setup found, so these handlers never write to another disk
+const kindleAt = (drive) => { if (!S.findKindles().some((k) => k.path === drive)) throw new Error("Connect the Kindle again."); return drive; };
+handle("jb-prepare", async ({ drive }, say) => ({ backup: await S.prepareJailbreak(kindleAt(drive), app.getPath("temp"), app.getPath("documents"), say) }));
+handle("jb-kual", async ({ drive }, say) => { await S.installKual(kindleAt(drive), app.getPath("temp"), say); return {}; });
+
 handle("open", async ({ url }) => {
   if (/^https:\/\//.test(url)) await shell.openExternal(url);
   return {};

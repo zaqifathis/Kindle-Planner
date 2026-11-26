@@ -1,7 +1,9 @@
 // Offline checks for steps.js and the payload: node test_setup.mjs (after node prepare.mjs)
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -61,6 +63,43 @@ assert.match(conf, /^SERVER="https:\/\/x\.workers\.dev"$/m);
 assert.match(conf, /^KINDLE_KEY="k3y"$/m);
 assert.ok(!conf.includes("\r"));
 assert.ok(existsSync(join(dest, "autostart.on")), "autostart is on by default");
+
+// jailbreak: the archive is used only with the pinned hash; hidden folders are copied too
+const src = join(tmp, "wb"); mkdirSync(join(src, ".active_content_sandbox/store"), { recursive: true });
+writeFileSync(join(src, ".active_content_sandbox/store/index.html"), "x");
+execFileSync("tar", ["-czf", join(tmp, "wb.tar.gz"), "-C", src, "."]);
+const tgz = readFileSync(join(tmp, "wb.tar.gz"));
+const spec = { url: "https://example.invalid/wb.tar.gz", sha256: createHash("sha256").update(tgz).digest("hex") };
+const fileFetch = async () => new Response(tgz);
+assert.ok(await S.withArchive(spec, tmp, (d) => existsSync(join(d, ".active_content_sandbox/store/index.html")), fileFetch));
+await assert.rejects(S.withArchive({ ...spec, sha256: "0".repeat(64) }, tmp, () => {}, fileFetch), /not the expected file/);
+await assert.rejects(S.withArchive(spec, tmp, () => {}, async () => new Response("", { status: 404 })), /Could not download/);
+assert.ok(!readdirSync(tmp).some((n) => n.startsWith("kp-jb-")), "temp files are deleted");
+
+// filler: writes exactly (free - leave) bytes, in 1 GB files at most; a rerun replaces the old filler
+const jb = join(tmp, "JB"); for (const d of ["documents", "system"]) mkdirSync(join(jb, d), { recursive: true });
+await S.fillStorage(jb, 1000, () => 20 * 1024 * 1024 + 1000 + 5);
+await S.fillStorage(jb, 1000, () => 20 * 1024 * 1024 + 1000 + 5);
+assert.deepEqual(readdirSync(join(jb, S.FILLER)), ["fill-1.dat"]);
+assert.equal(statSync(join(jb, S.FILLER, "fill-1.dat")).size, 20 * 1024 * 1024 + 5);
+
+// backup: the documents folder lands in a dated folder, and an existing backup is never overwritten
+mkdirSync(join(jb, "documents/book.sdr"), { recursive: true }); writeFileSync(join(jb, "documents/book.azw3"), "b");
+const bk = S.backupBooks(jb, join(tmp, "backups"), new Date("2026-11-26T14:05:00Z"));
+assert.equal(bk, join(tmp, "backups", "Kindle backup 2026-11-26 14-05"));
+assert.ok(existsSync(join(bk, "documents/book.azw3")) && existsSync(join(bk, "documents/book.sdr")));
+assert.throws(() => S.backupBooks(jb, join(tmp, "backups"), new Date("2026-11-26T14:05:00Z")));
+
+// the real pinned downloads still match (skipped offline: KP_OFFLINE=1)
+if (!process.env.KP_OFFLINE) {
+  writeFileSync(join(jb, "update.bin"), ""); writeFileSync(join(jb, "Update_x.BIN.tmp.partial"), ""); writeFileSync(join(jb, "keep.txt"), "");
+  await S.installKual(jb, tmp);
+  assert.deepEqual(readdirSync(jb).sort(), ["documents", "extensions", "keep.txt", "system"]);
+  assert.ok(existsSync(join(jb, "documents/KUAL.sh")) && existsSync(join(jb, "documents/KUAL.jar")));
+  assert.deepEqual(S.findKindles("darwin", [jb]), [{ path: jb, kual: true }]);
+  // not prepareJailbreak itself: its filler would fill this computer's disk
+  assert.ok(await S.withArchive(S.JB.winterbreak, tmp, (d) => existsSync(join(d, ".active_content_sandbox")) && existsSync(join(d, "mesquito/index.html"))));
+}
 
 // password record from the shipped auth.mjs
 const { record, kindleKey } = await S.newAuth(join(payload, "cloud"), "long enough pw", "keep-me");

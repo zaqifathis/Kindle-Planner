@@ -47,6 +47,7 @@
           ]
         }
       ],
+      "artifactName": "KidPlannerSetup-mac.${ext}",
       "category": "public.app-category.utilities",
       "hardenedRuntime": true,
       "entitlements": "build/entitlements.mac.plist",
@@ -54,7 +55,8 @@
       "notarize": true
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "artifactName": "KidPlannerSetup-windows.${ext}"
     },
     "nsis": {
       "oneClick": true
@@ -62,5 +64,7 @@
     "electronLanguages": [
       "en"
     ]
-  }
+  },
+  "license": "SEE LICENSE IN LICENSE.md",
+  "author": "Zaqi Fathis"
 }

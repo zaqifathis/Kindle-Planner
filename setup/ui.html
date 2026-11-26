@@ -24,6 +24,7 @@
   .step { display: none; } .step.on { display: block; }
   .log { margin-top: 18px; } .log div { margin: 4px 0; } .log .now::after { content: " …"; }
   .err { color: var(--err); white-space: pre-wrap; margin-top: 14px; } .good { color: var(--ok); font-weight: 600; }
+  .warn { color: var(--err); font-weight: 600; }
   .url { font-size: 18px; font-weight: 600; word-break: break-all; }
   footer { padding: 0 34px 24px; color: var(--muted); font-size: 13px; }
 </style>
@@ -34,11 +35,14 @@
 
 <section class="step" id="s-welcome">
   <h2>Before you start</h2>
+  <p class="hint">Tested on Kindle Paperwhite 3 (7th generation, 2015). Other touch Kindles can work, but they are not tested yet.</p>
   <ol>
-    <li>Your Kindle is jailbroken and has KUAL. This step is not automatic, because it depends on your Kindle. Follow the guide at <a data-href="https://kindlemodding.org">kindlemodding.org</a>.</li>
+    <li><b>Prepare your Kindle (once, about 30 to 60 minutes).</b> Jailbreak the Kindle and install KUAL. A jailbreak lets the Kindle run programs that Amazon did not make. KUAL is the menu where Kid Planner will appear. Setup does most of it for you: click Prepare my Kindle below. To do it by hand, follow the step-by-step guide: <a data-href="https://zaqifathis.github.io/kindle-dashboard/#prepare">Prepare your Kindle</a>.
+      You are done when your Kindle library shows a book called "KUAL".</li>
     <li>You have a free Cloudflare account. The planner runs there. If you do not have one, <a data-href="https://dash.cloudflare.com/sign-up">sign up here</a> and confirm your email.</li>
   </ol>
   <button class="primary" id="b-login">Connect Cloudflare</button>
+  <button class="b-jb">Prepare my Kindle</button>
   <div class="log" id="login-log"></div><div class="err" id="login-err"></div>
 </section>
 
@@ -61,8 +65,41 @@
   <p id="k-wait">Connect the Kindle to this computer with its USB cable. Setup finds it by itself.</p>
   <p id="k-found" hidden></p>
   <button class="primary" id="b-kindle" disabled>Copy to Kindle</button>
+  <button class="b-jb" id="b-kjb" hidden>Prepare this Kindle</button>
   <button id="b-skip">Skip for now</button>
   <div class="log" id="kindle-log"></div><div class="err" id="kindle-err"></div>
+</section>
+
+<section class="step" id="s-jb">
+  <h2>Prepare your Kindle</h2>
+  <p>Setup puts the jailbreak WinterBreak and the menu KUAL on the Kindle. You tap a few things on the Kindle. It takes about 30 minutes.</p>
+  <p class="warn">A jailbreak can fail, and a failed jailbreak can make the Kindle unusable. Do not do a factory reset during or after the jailbreak.</p>
+  <p class="hint">Setup copies the books from the Kindle to your Documents folder before it changes anything. How to remove a screen password, and how to back up by hand: <a data-href="https://zaqifathis.github.io/kindle-dashboard/#backup">Backup and screen password</a>.</p>
+  <p class="hint">Another jailbreak (not WinterBreak)? Do the jailbreak by hand with <a data-href="https://kindlemodding.org/jailbreaking/">kindlemodding.org</a>, connect the Kindle, then click Install KUAL below.</p>
+  <ol>
+    <li>On the Kindle, open Settings, then Device Options, then Device Info. If the firmware version is 5.18.1 or newer, stop here: WinterBreak does not work on it. Check <a data-href="https://kindlemodding.org/jailbreaking/">kindlemodding.org</a> for other methods.</li>
+    <li>Make sure that the Kindle is registered to an Amazon account and has no screen password.</li>
+    <li>Turn on Airplane Mode, then restart the Kindle.</li>
+    <li>Connect the Kindle to this computer with its USB cable.</li>
+  </ol>
+  <p id="jb-found">No Kindle connected.</p>
+  <button class="primary" id="b-jb1" disabled>Copy the jailbreak</button>
+  <div class="log" id="jb1-log"></div><div class="err" id="jb1-err"></div>
+  <div id="jb-kindle" hidden>
+    <p>Setup filled the Kindle storage, so the Kindle cannot download an Amazon update. On the Kindle:</p>
+    <ol>
+      <li>Eject the Kindle on this computer, then unplug the cable.</li>
+      <li>On the home screen, tap the cart icon to open the Kindle Store. If the Kindle asks to turn off Airplane Mode, tap Yes.</li>
+      <li>A page called Mesquito opens. Tap the WinterBreak icon.</li>
+      <li>Wait about 30 seconds. If lines of text fill the screen and the home screen restarts, the jailbreak worked. If no text appears, do steps 2 and 3 again.</li>
+      <li>Connect the Kindle to this computer again, then click Install KUAL.</li>
+    </ol>
+  </div>
+  <button id="b-jb2" disabled>Install KUAL</button>
+  <p class="hint">Only after the jailbreak worked. Setup removes the filler files and the update files, then copies KUAL.</p>
+  <div class="log" id="jb2-log"></div><div class="err" id="jb2-err"></div>
+  <button class="primary" id="b-jbnext" hidden>Continue</button>
+  <button id="b-jbback">Back</button>
 </section>
 
 <section class="step" id="s-done">
@@ -109,6 +146,9 @@ const STEPS = {
   copy: "Preparing the planner", address: "Creating your web address",
   deploy: "Installing the planner on Cloudflare (about 1 minute)", password: "Saving your password",
   settings: "Waiting for the new address to work and saving your settings (up to 5 minutes)",
+  "jb-backup": "Copying your books to this computer", "jb-download": "Downloading WinterBreak", "jb-copy": "Copying WinterBreak to the Kindle",
+  "jb-fill": "Filling the Kindle storage (up to 10 minutes)",
+  "kual-download": "Downloading KUAL", "kual-copy": "Removing the filler files and copying KUAL",
 };
 let state = {}, logBox = null;
 window.setup.onProgress((m) => {
@@ -149,19 +189,42 @@ $("b-install").onclick = async () => {
 };
 
 let poll = null, drive = null;
-function toKindle() {
-  show("s-kindle"); drive = null; $("b-kindle").disabled = true; $("kindle-err").textContent = "";
-  const look = async () => {
-    const r = await call("find-kindles");
-    const k = (r.kindles || [])[0];
-    $("k-wait").hidden = !!k; $("k-found").hidden = !k;
-    if (!k) { drive = null; $("b-kindle").disabled = true; return; }
-    drive = k.path;
-    $("k-found").textContent = k.kual ? `Found the Kindle at ${k.path}.` : `Found a Kindle at ${k.path}, but it has no KUAL yet. Jailbreak it and install KUAL first, then connect it again.`;
-    $("b-kindle").disabled = !k.kual;
-  };
-  look(); clearInterval(poll); poll = setInterval(look, 2000);
+function watch(fn) {
+  drive = null; clearInterval(poll);
+  const look = async () => { const k = ((await call("find-kindles")).kindles || [])[0]; drive = k ? k.path : null; fn(k); };
+  look(); poll = setInterval(look, 2000);
 }
+function toKindle() {
+  show("s-kindle"); $("b-kindle").disabled = true; $("kindle-err").textContent = "";
+  watch((k) => {
+    $("k-wait").hidden = !!k; $("k-found").hidden = !k; $("b-kjb").hidden = !k || k.kual;
+    if (!k) { $("b-kindle").disabled = true; return; }
+    $("k-found").textContent = k.kual ? `Found the Kindle at ${k.path}.` : `Found a Kindle at ${k.path}, but it has no KUAL yet. Prepare it first.`;
+    $("b-kindle").disabled = !k.kual;
+  });
+}
+function toJb() {
+  show("s-jb"); $("b-jbnext").hidden = true;
+  for (const id of ["jb1-err", "jb2-err"]) $(id).textContent = "";
+  watch((k) => {
+    $("jb-found").textContent = k ? `Found the Kindle at ${k.path}.` : "No Kindle connected.";
+    $("b-jb1").disabled = $("b-jb2").disabled = !k;
+  });
+}
+for (const b of document.querySelectorAll(".b-jb")) b.onclick = toJb;
+$("b-jb1").onclick = async () => {
+  const r = await busy($("b-jb1"), "jb1-log", "jb1-err", () => call("jb-prepare", { drive }));
+  if (!r) return;
+  $("jb1-log").append(Object.assign(document.createElement("div"), { className: "good", textContent: "Your books are backed up in: " + r.backup }));
+  $("jb-kindle").hidden = false;
+};
+$("b-jb2").onclick = async () => {
+  if (!(await busy($("b-jb2"), "jb2-log", "jb2-err", () => call("jb-kual", { drive })))) return;
+  $("jb2-log").append(Object.assign(document.createElement("div"), { className: "good", textContent: "KUAL is installed." }));
+  $("b-jbnext").hidden = false;
+};
+$("b-jbnext").onclick = () => (state.url ? toKindle() : (clearInterval(poll), show("s-welcome")));
+$("b-jbback").onclick = () => { clearInterval(poll); state.url ? toKindle() : show("s-welcome"); };
 $("b-kindle").onclick = async () => {
   const r = await busy($("b-kindle"), "kindle-log", "kindle-err", () => call("install-kindle", { drive }));
   if (!r) return;

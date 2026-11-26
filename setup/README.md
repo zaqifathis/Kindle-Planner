@@ -15,7 +15,13 @@ The app does the rest:
 
 Later, the app can change the password or install on the Kindle again.
 
-The jailbreak and KUAL are not automatic. The person must do them first.
+If the Kindle has no KUAL yet, the app can prepare it. The person clicks Prepare my Kindle:
+
+1. The app copies the Kindle's `documents` folder to `Documents/Kindle backup <date>` on the computer. Then it downloads WinterBreak, copies it to the Kindle, and fills the Kindle storage so that the Kindle cannot download an Amazon update.
+2. The person runs WinterBreak from the Kindle Store on the Kindle.
+3. The app removes the filler and the `.bin` update files, then copies KUAL to `documents/` and creates `extensions/`.
+
+The downloads are pinned to one version and one SHA-256 hash in `steps.js` (`JB`). If WinterBreak or PEKI release a new version, update the URL and the hash there. The app does not install MRPI, because Kid Planner does not need it. After another jailbreak, the person clicks only Install KUAL. The app does not check the firmware version. The person reads it on the Kindle.
 
 ## Development
 
@@ -66,6 +72,21 @@ Then build. electron-builder signs with the Developer ID certificate, uses the h
 ```sh
 APPLE_KEYCHAIN_PROFILE=kidplanner-notary npm run dist
 ```
+
+### Publishing the downloads
+
+The web page `docs/index.html` (GitHub Pages) links to the newest GitHub Release. The links work only when the release has files with these exact names. `package.json` sets them (`artifactName`):
+
+- `KidPlannerSetup-mac.dmg`
+- `KidPlannerSetup-windows.exe`
+
+To publish a new version:
+
+1. Raise `version` in `package.json`.
+2. Build the signed `.dmg` on the Mac, and the `.exe` with the Windows workflow.
+3. On GitHub, open Releases > Draft a new release. Make a tag such as `v1.1.0`, attach both files, and click Publish release.
+
+To turn on the web page, open Settings > Pages on GitHub. Under Build and deployment, select Deploy from a branch, then `main` and `/docs`. The repository must be public, or the GitHub plan must allow Pages for private repositories. Release downloads work for other people only when the repository is public.
 
 ### Windows
 

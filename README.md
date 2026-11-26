@@ -1,6 +1,6 @@
 # Kid Planner: Kindle wall display
 
-A daily planner for a child on a jailbroken Kindle Paperwhite 3. The Kindle hangs on the wall and shows the day, the weather, events, and habit tick boxes. The child taps the e-ink screen to tick off habits and add events. A parent manages the same data from a web dashboard.
+A daily planner for a child on a jailbroken Kindle. It is tested on a Kindle Paperwhite 3 (7th generation, 2015). The Kindle hangs on the wall and shows the day, the weather, events, and habit tick boxes. The child taps the e-ink screen to tick off habits and add events. A parent manages the same data from a web dashboard.
 
 The Kindle UI is in English or German. You choose the Kindle language in the web dashboard, in the Kindle tab. The web dashboard has its own English/German switch.
 
@@ -60,7 +60,7 @@ This folder is a KUAL extension. KUAL (Kindle Unified Application Launcher) is a
 | `menu.json`, `config.xml` | KUAL menu: start, stop, autostart on/off, touch test. |
 | `bin/start.sh` | Starts `loop.sh` in the background, once. |
 | `bin/loop.sh` | Main loop. Stops the Kindle GUI, keeps the device awake, fetches `/dashboard.png` every minute, sends taps to `/tap`, and handles the lock and the front light. |
-| `bin/touch.lua` | Reads raw `input_event` records from `/dev/input/event1` (touch) and `/dev/input/event0` (power button). Prints one line per tap or press. |
+| `bin/touch.lua` | Reads raw `input_event` records from the touch screen and the power button. Prints one line per tap or press. With `auto`, it finds both devices in `/proc/bus/input/devices` by what they report (`ABS_MT_POSITION_X`, `KEY_POWER`), as KOReader does. If it finds nothing, it uses the Paperwhite 3 paths `/dev/input/event1` and `/dev/input/event0`. |
 | `bin/autostart.sh` | Installs or removes the upstart job `/etc/upstart/kiddash.conf`. |
 | `bin/stop.sh` | Kills the loop and reboots the Kindle. Restarting only the GUI hangs on this model. |
 | `bin/diag.sh` | Touch test: records raw input events to `/mnt/us/` for calibration. |
@@ -70,6 +70,16 @@ This folder is a KUAL extension. KUAL (Kindle Unified Application Launcher) is a
 The Kindle keeps the UI state (tab, add screen, draft text) in `/tmp/kiddash.state` and sends it as `?s=...` with every request. Tab changes and typing therefore do not write to KV.
 
 To leave dashboard mode without the KUAL menu, create the file `/mnt/us/kiddash_off` over USB and reboot.
+
+### Other Kindle models
+
+Kid Planner is tested only on the Kindle Paperwhite 3. The code is prepared for other touch Kindles:
+
+- The Kindle reads its screen size with `eips -i` and sends it as `scr=<width>x<height>`. The Worker draws every page at that size. The layout is written in Paperwhite 3 units (1072x1448) and is scaled by the smaller of width / 1072 and height / 1448. Screens from 758 to about 1264 pixels wide work, for example Paperwhite 1 and 2 (758x1024), Paperwhite 5 (1236x1648) and Oasis 2 and 3 (1264x1680). Other sizes get the Paperwhite 3 size.
+- `touch.lua` finds the touch screen and the power button by what they report, not by a fixed path.
+- On all touch Kindles after the first Kindle Touch, the touch screen reports positions in screen pixels (KOReader scales only the Kindle Touch). The Worker divides a tap position by the same scale.
+
+Not tested: a tap on any model other than the Paperwhite 3. Run the touch test (`bin/diag.sh`) on a new model before you rely on it.
 
 ### Cloud side (`cloud/`)
 
@@ -116,6 +126,8 @@ If the Access configuration is missing, the Worker uses password mode. This is t
 - If the `auth` key is missing, the Worker refuses all requests. All responses carry security headers (CSP, `frame-ancestors 'none'`, `no-referrer`, `nosniff`).
 
 ## Jailbreak
+
+For a step-by-step guide for parents, see [docs/JAILBREAK.md](docs/JAILBREAK.md) or the web page https://zaqifathis.github.io/kindle-dashboard/#prepare. The Setup app automates WinterBreak and KUAL (see `setup/README.md`).
 
 The device is a Kindle Paperwhite 3 (touch controller `cyttsp4_mt`, screen 1072x1448). These are the tools that were used:
 
@@ -175,7 +187,9 @@ python3 tools/build_glyphs.py   # needs Pillow
 - Personal data and backups: `cloud/backups/`, `diag/`.
 - Kindle runtime files and the `jailbreak/` downloads.
 
-## Licenses
+## License
+
+Copyright 2026 Zaqi Fathis. Kid Planner is licensed under the [PolyForm Strict License 1.0.0](LICENSE.md). You may use it for noncommercial purposes, for example in your own family. You may not change it, share copies of it, or sell it. For any other use, ask the author.
 
 The fonts in `cloud/fonts/` (Noto Sans, Fredoka) use the SIL Open Font License 1.1. See `cloud/fonts/LICENSES.md`.
 

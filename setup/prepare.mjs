@@ -9,7 +9,7 @@ const root = join(import.meta.dirname, "..");
 const out = join(import.meta.dirname, "payload");
 rmSync(out, { recursive: true, force: true });
 
-const tracked = execFileSync("git", ["ls-files", "cloud/src", "cloud/public", "cloud/wrangler.toml", "cloud/tools/auth.mjs", "kindle/extensions/kiddash"], { cwd: root, encoding: "utf8" })
+const tracked = execFileSync("git", ["ls-files", "LICENSE.md", "cloud/src", "cloud/public", "cloud/wrangler.toml", "cloud/tools/auth.mjs", "kindle/extensions/kiddash"], { cwd: root, encoding: "utf8" })
   .split("\n").filter(Boolean);
 for (const f of tracked) {
   const to = join(out, f.replace(/^kindle\/extensions\//, "kindle/"));
