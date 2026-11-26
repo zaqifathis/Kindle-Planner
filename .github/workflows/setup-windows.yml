@@ -13,14 +13,17 @@ jobs:
     steps:
       - run: git config --global core.autocrlf false # Kindle scripts keep LF (see .gitattributes)
         working-directory: .
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: 22
-      - run: npm ci # installs the Windows builds of esbuild and workerd
+          node-version: 24 # npm 11, like the machine that wrote package-lock.json
+      # npm install, not npm ci: on Windows npm adds packages that a lock file written on macOS leaves out
+      # (electron-builder-squirrel-windows, a peer dependency of electron-builder). It also installs the
+      # Windows builds of esbuild and workerd.
+      - run: npm install --no-audit --no-fund
       - run: npm test # also checks that no Kindle file has CRLF
       - run: npx electron-builder --win --x64 --publish never
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: kid-planner-setup-windows
           path: setup/dist/*.exe
