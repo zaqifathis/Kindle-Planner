@@ -24,3 +24,4 @@ server/server.log
 
 # Cloudflare Access service token for the Kindle
 cloud/.kindle-token
+cloud/auth.json

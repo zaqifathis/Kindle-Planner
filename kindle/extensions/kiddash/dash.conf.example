@@ -1,6 +1,8 @@
 # Dashboard server on Cloudflare.
 SERVER="https://<your-worker>.<your-subdomain>.workers.dev"
-# Cloudflare Access service token for the Kindle (Zero Trust > Access > Service credentials).
+# Kindle key (password installs). The Setup app fills this in.
+KINDLE_KEY=""
+# Or: Cloudflare Access service token for the Kindle (Zero Trust > Access > Service credentials).
 CF_CLIENT_ID=""
 CF_CLIENT_SECRET=""
 # Seconds between refreshes.

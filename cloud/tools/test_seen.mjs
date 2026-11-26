@@ -17,18 +17,22 @@ const KV = {
 };
 globalThis.fetch = async () => new Response("{}", { status: 500 }); // no weather offline
 globalThis.caches = { default: { match: async () => undefined, put: async () => {} } };
-const env = { KV, SECRET: "test-secret" };
+const { record, kindleKey } = await (await import("./auth.mjs")).newAuth("test password");
+store.set("auth", JSON.stringify(record));
+const env = { KV };
 const cf = { city: "Dresden", region: "Saxony", country: "DE", latitude: "51.05", longitude: "13.74", timezone: "Europe/Berlin" };
 const hex = (s) => Buffer.from(s).toString("hex");
 
 async function kindle(ssid) {
   const waits = [];
-  const req = new Request(`https://x/dashboard.png?bat=81&ws=${hex(ssid)}&wq=50/70`, { headers: { "X-Key": "test-secret" } });
+  const req = new Request(`https://x/dashboard.png?bat=81&ws=${hex(ssid)}&wq=50/70`, { headers: { "X-Kindle-Key": kindleKey } });
   Object.defineProperty(req, "cf", { value: cf });
   await worker.fetch(req, env, { waitUntil: (p) => waits.push(p) });
   await Promise.all(waits);
 }
 const seenPuts = () => puts.filter((k) => k === "seen").length;
+const login = await worker.fetch(new Request("https://x/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: "test password" }) }), env, { waitUntil() {} });
+const cookie = login.headers.get("Set-Cookie").split(";")[0];
 
 await kindle("Home WLAN");
 assert.equal(seenPuts(), 1, "first poll writes");
@@ -37,7 +41,7 @@ assert.equal(seenPuts(), 1, "same WLAN within 10 min does not write");
 await kindle("Grandma");
 assert.equal(seenPuts(), 2, "new WLAN writes at once");
 
-const st = await (await worker.fetch(new Request("https://x/api/state", { headers: { Cookie: "kp=test-secret" } }), env, { waitUntil() {} })).json();
+const st = await (await worker.fetch(new Request("https://x/api/state", { headers: { Cookie: cookie } }), env, { waitUntil() {} })).json();
 assert.equal(st.seen.ssid, "Grandma");
 assert.equal(st.seen.bat, "81");
 assert.equal(st.seen.city, undefined, "no place is stored");

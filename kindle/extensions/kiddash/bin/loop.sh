@@ -20,6 +20,10 @@ CURL="curl -s --cacert $DIR/cacert.pem "
 if [ -n "$CF_CLIENT_ID" ] && [ -n "$CF_CLIENT_SECRET" ]; then
   CURL="$CURL -H CF-Access-Client-Id:$CF_CLIENT_ID -H CF-Access-Client-Secret:$CF_CLIENT_SECRET"
 fi
+# Password installs: the Kindle's own key (made by the Setup app)
+if [ -n "$KINDLE_KEY" ]; then
+  CURL="$CURL -H X-Kindle-Key:$KINDLE_KEY"
+fi
 
 # Stopping the GUI also signals processes started from KUAL. Ignore that.
 trap '' HUP TERM INT

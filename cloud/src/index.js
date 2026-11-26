@@ -449,7 +449,10 @@ function exportCsv(data, now) {
 //     We verify that JWT ourselves (signature, issuer, audience, expiry) and then check:
 //       - browser users: email must be in ALLOWED_EMAILS
 //       - Kindle: service token whose client id equals KINDLE_CLIENT_ID
-//  2. Legacy shared key (only while Access is not configured yet).
+//  2. Password (default for shared installs): the Setup app writes an AUTH_KEY record to KV
+//     with a PBKDF2 hash of the parent password and a SHA-256 of the Kindle key. There is no
+//     public "create password" page, so nobody can claim a fresh install by visiting it first.
+//     Login sets a cookie "<expiry>.<HMAC>" signed with record.session; a reset rotates it.
 const KINDLE_ROUTES = new Set(["/dashboard.png", "/tap", "/kindle/command", "/kindle/wait"]);
 
 const b64urlBytes = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(s.length / 4) * 4, "=")), (c) => c.charCodeAt(0));
@@ -519,12 +522,55 @@ async function authorize(request, url, env) {
     }
     return null;
   }
-  // legacy shared key (before Access is configured)
-  let k;
-  if (url.pathname === "/login") k = url.searchParams.get("k");
-  else if (KINDLE_ROUTES.has(url.pathname)) k = request.headers.get("X-Key");
-  else k = request.headers.get("X-Key") || getCookie(request, "kp");
-  return keyMatches(k, env.SECRET) ? { who: KINDLE_ROUTES.has(url.pathname) ? "kindle" : "user" } : null;
+  const rec = await env.KV.get(AUTH_KEY, "json");
+  if (!rec) return null;
+  const kk = request.headers.get("X-Kindle-Key");
+  if (kk) return KINDLE_ROUTES.has(url.pathname) && keyMatches(await sha256(kk), rec.kindle) ? { who: "kindle" } : null;
+  return (await sessionValid(getCookie(request, "kp"), rec)) ? { who: "user" } : null;
+}
+
+// ---- password mode
+const AUTH_KEY = "auth", FAILS_KEY = "login_fails";
+const SESSION_DAYS = 90;
+const enc = new TextEncoder();
+const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+const unhex = (h) => Uint8Array.from(h.match(/../g) || [], (x) => parseInt(x, 16));
+const sha256 = async (s) => hex(await crypto.subtle.digest("SHA-256", enc.encode(s)));
+async function pbkdf2(password, saltHex, iter) {
+  const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
+  return hex(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: unhex(saltHex), iterations: iter }, key, 256));
+}
+async function hmac(keyHex, msg) {
+  const key = await crypto.subtle.importKey("raw", unhex(keyHex), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return hex(await crypto.subtle.sign("HMAC", key, enc.encode(msg)));
+}
+async function sessionValid(cookie, rec) {
+  const [exp, sig] = String(cookie || "").split(".");
+  if (!sig || !(+exp > Date.now() / 1000)) return false;
+  return keyMatches(sig, await hmac(rec.session, "s" + exp));
+}
+const cookie = (v, age) => `kp=${v}; Path=/; Max-Age=${age}; Secure; HttpOnly; SameSite=Lax`;
+
+/** POST /login {password}. After 5 wrong tries, login locks for 1, 2, 4 ... up to 60 minutes. */
+async function login(request, env) {
+  const rec = await env.KV.get(AUTH_KEY, "json");
+  if (!rec) return json({ error: "not set up", setup: true }, 401);
+  const now = Math.floor(Date.now() / 1000);
+  const fails = (await env.KV.get(FAILS_KEY, "json")) || { n: 0, until: 0 };
+  if (fails.until > now) return json({ error: "locked", wait: fails.until - now }, 429);
+  let password = "";
+  try { password = String((await request.json()).password || ""); } catch {}
+  if (!password || !keyMatches(await pbkdf2(password.slice(0, 200), rec.salt, rec.iter), rec.hash)) {
+    fails.n++;
+    if (fails.n >= 5) fails.until = now + Math.min(3600, 60 * 2 ** (fails.n - 5));
+    await env.KV.put(FAILS_KEY, JSON.stringify(fails), { expirationTtl: 86400 });
+    return json({ error: "wrong password" }, 401);
+  }
+  if (fails.n) await env.KV.delete(FAILS_KEY);
+  const exp = now + SESSION_DAYS * 86400;
+  return new Response(JSON.stringify({ ok: true }), {
+    headers: { ...SEC, "Content-Type": "application/json", "Set-Cookie": cookie(`${exp}.${await hmac(rec.session, "s" + exp)}`, SESSION_DAYS * 86400) },
+  });
 }
 
 const SEC = {
@@ -544,20 +590,12 @@ export default {
     const path = url.pathname;
 
     const accessMode = !!(env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD);
-    if (path === "/login") {
-      if (accessMode) return new Response(null, { status: 302, headers: { ...SEC, Location: "/" } });
-      if (!(await authorize(request, url, env))) return new Response("Wrong key", { status: 403, headers: SEC });
-      return new Response(null, {
-        status: 302,
-        headers: {
-          ...SEC,
-          Location: "/",
-          "Set-Cookie": `kp=${encodeURIComponent(url.searchParams.get("k"))}; Path=/; Max-Age=31536000; Secure; HttpOnly; SameSite=Lax`,
-        },
-      });
+    if (!accessMode && request.method === "POST" && request.headers.get("Content-Type") === "application/json") {
+      if (path === "/login") return login(request, env);
+      if (path === "/logout") return new Response(JSON.stringify({ ok: true }), { headers: { ...SEC, "Content-Type": "application/json", "Set-Cookie": cookie("", 0) } });
     }
     const auth = await authorize(request, url, env);
-    if (!auth) return json({ error: "unauthorized", access: accessMode }, accessMode ? 403 : 401);
+    if (!auth) return json({ error: "unauthorized", access: accessMode, setup: !accessMode && !(await env.KV.get(AUTH_KEY)) }, accessMode ? 403 : 401);
 
     const data = await load(env, ctx);
     const L = setLang(data.kindle_lang);
@@ -637,7 +675,7 @@ export default {
     if (path === "/api/state" && request.method === "GET") {
       const wx = await weather(loc, ctx);
       return json({
-        signed_in_as: auth.email || null,
+        signed_in_as: auth.email || null, auth_mode: env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD ? "access" : "password",
         today, weekday: weekday(now.date), hour: now.hour, minute: now.minute, period: periodIndex(now),
         today_habits: habitsOn(data, now.date), done: data.done[today] || [], habits: data.habits,
         events: data.events, upcoming: [0, 1, 2, 3, 4, 5, 6].flatMap((i) => eventsOn(data, addDays(now.date, i)).map((e) => ({ ...e, on: iso(addDays(now.date, i)) }))),

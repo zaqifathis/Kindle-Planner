@@ -389,6 +389,8 @@ const I18N = {
     "k.wifi": "WLAN", "k.battery": "Battery",
     "k.stateStop": "The Kindle is in normal reader mode.", "k.stateRun": "The Kindle shows the planner display.",
     footer: "Kid Planner · Kindle display + web dashboard", signedIn: "signed in as", signOut: "Sign out",
+    password: "Password", logIn: "Log in", wrongPw: "Wrong password.", locked: (m) => `Too many wrong tries. Wait ${m} min, then try again.`,
+    notSetUp: "This planner is not set up yet. Open the Kid Planner Setup app to choose a password.",
     noAccess: "This account has no access to the planner.", noAccess2: "and sign in with an allowed Google account.",
   },
   de: {
@@ -434,6 +436,8 @@ const I18N = {
     "k.wifi": "WLAN", "k.battery": "Akku",
     "k.stateStop": "Der Kindle ist im normalen Lesemodus.", "k.stateRun": "Der Kindle zeigt den Planer.",
     footer: "Kinderplaner · Kindle-Anzeige + Web-Dashboard", signedIn: "angemeldet als", signOut: "Abmelden",
+    password: "Passwort", logIn: "Anmelden", wrongPw: "Falsches Passwort.", locked: (m) => `Zu viele falsche Versuche. Warte ${m} Min. und versuche es dann erneut.`,
+    notSetUp: "Dieser Planer ist noch nicht eingerichtet. Öffne die Kid Planner Setup-App und wähle ein Passwort.",
     noAccess: "Dieses Konto hat keinen Zugriff auf den Planer.", noAccess2: "und melde dich mit einem erlaubten Google-Konto an.",
   },
 };
@@ -482,13 +486,36 @@ let S = null, ST = null, editing = null, pv = "day", evRepeat = "none", evDays =
 async function api(path, body) {
   const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
   if (r.status === 401 || r.status === 403) {
-    document.body.innerHTML = '<div class="hero" style="min-height:100vh"><div class="wrap"><h1 class="name">private</h1>' +
-      `<p class="meta">${t("noAccess")} <a href="/cdn-cgi/access/logout">${t("signOut")}</a> ${t("noAccess2")}</p></div></div>`;
+    const j = await r.json().catch(() => ({}));
+    if (j.access) {
+      document.body.innerHTML = '<div class="hero" style="min-height:100vh"><div class="wrap"><h1 class="name">private</h1>' +
+        `<p class="meta">${t("noAccess")} <a href="/cdn-cgi/access/logout">${t("signOut")}</a> ${t("noAccess2")}</p></div></div>`;
+    } else showLogin(j.setup);
     throw new Error("unauthorized");
   }
   const j = await r.json();
   if (!r.ok) throw new Error(j.error || r.statusText);
   return j;
+}
+// Password installs: login form. setup = no password stored yet (the Setup app sets it).
+function showLogin(setup) {
+  const msg = el("p", { class: "meta", role: "status" });
+  const pw = el("input", { id: "pw", type: "password", autocomplete: "current-password", required: true, style: "font-size:20px;padding:10px 14px;max-width:360px;width:100%" });
+  const form = el("form", {},
+    el("label", { for: "pw", class: "meta", style: "display:block;margin:20px 0 8px" }, t("password")),
+    pw, " ", el("button", { class: "btn primary", style: "font-size:18px;padding:10px 22px" }, t("logIn")), msg);
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const r = await fetch("/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: pw.value }) });
+    if (r.ok) return location.reload();
+    const j = await r.json().catch(() => ({}));
+    msg.textContent = r.status === 429 ? t("locked", Math.ceil((j.wait || 60) / 60)) : t("wrongPw");
+    pw.select();
+  });
+  const box = el("div", { class: "wrap" }, el("h1", { class: "name" }, "planner"));
+  box.append(setup ? el("p", { class: "meta" }, t("notSetUp")) : form);
+  document.body.replaceChildren(el("div", { class: "hero", style: "min-height:100vh" }, box));
+  if (!setup) pw.focus();
 }
 function el(tag, attrs = {}, ...kids) {
   const e = document.createElement(tag);
@@ -523,6 +550,9 @@ function renderAll() { renderHero(); renderStats(); renderToday(); renderHabits(
 function renderWho() {
   const w = $("who"); w.replaceChildren();
   if (S.signed_in_as) w.append(` · ${t("signedIn")} ${S.signed_in_as} · `, el("a", { href: "/cdn-cgi/access/logout" }, t("signOut")));
+  else if (S.auth_mode === "password") w.append(" · ", el("a", { href: "#", onclick: async (e) => {
+    e.preventDefault(); await fetch("/logout", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); location.reload();
+  } }, t("signOut")));
 }
 function renderHero() {
   renderWho();
